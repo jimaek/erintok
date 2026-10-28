@@ -34,11 +34,12 @@ Erin has all these features implemented :
 - Support for Horizontal and Vertical scroll direction
 - Support for starting video playback from the start, middle, or random point in the video
 - Support for custom styling\*\*\*\*
-- Plain HTTP on port 80 (put it behind your own reverse proxy for HTTPS)
 - Support for Docker / proxy deployment
 
 On top of these, please note that Erin is only a React app served by a small Node.js server listening on port 80.
 The server takes care of authentication, serving your media files, and serving the React app all at once.
+It only speaks plain HTTP: the recommended setup is to run Erin behind your own reverse proxy (nginx, Caddy, Traefik, ...)
+which takes care of HTTPS. See [Deployment and Examples](#deployment-and-examples).
 
 > \*: You can mask media to hide it from your feed. Should you want to see which items were masked, and even unmask them, you can long-press the `Mask` button, and the manager will open.
 
@@ -56,6 +57,12 @@ Before proceeding, regardless of Docker, Docker Compose, or a standalone deploym
 that you have created a `videos` directory containing all your media files. Later on, this directory will
 be made available to your instance of Erin (by binding a volume to your Docker container, or putting the directory
 at `/srv/videos` for a standalone deployment).
+
+The recommended setup is to run Erin behind your own reverse proxy, which takes care of HTTPS and forwards
+requests to Erin's port 80 over plain HTTP. Erin doesn't handle HTTPS itself.
+
+> **Note :** If you are upgrading from the previous Caddy-based image: `PUBLIC_URL` is no longer used,
+> Erin always listens on port 80 over HTTP, and `AUTH_SECRET` is now required when authentication is enabled.
 
 For a standalone deployment, build the app with `npm run build`, copy the `build` directory's contents into `/srv`,
 then run `npm ci --omit=dev` and `node index.js` (as root, to listen on port 80) from the `server` directory.
@@ -90,9 +97,9 @@ To help you get started quickly, a few example `docker-compose` files are locate
 
 Here's a description of every example :
 
-- `docker-compose.simple.yml`: Run Erin as a front-facing service on port 80, with environment variables supplied in the `docker-compose` file directly.
+- `docker-compose.proxy.yml` (recommended): A setup with Erin running on port 80, behind a proxy listening on port 443 that takes care of HTTPS.
 
-- `docker-compose.proxy.yml`: A setup with Erin running on port 80, behind a proxy listening on port 443.
+- `docker-compose.simple.yml`: Run Erin as a front-facing service on plain HTTP, port 80, with environment variables supplied in the `docker-compose` file directly.
 
 When your `docker-compose` file is on point, you can use the following commands :
 ```sh
@@ -117,7 +124,7 @@ To run Erin, you will need to set the following environment variables in a `.env
 | Parameter               | Type      | Description                | Default |
 | :---------------------- | :-------- | :------------------------- | ------- |
 | `AUTH_ENABLED`          | `string`  | Whether Basic Authentication should be enabled. (This parameter is case sensitive) (Possible values : true, false) | true |
-| `AUTH_SECRET`           | `string`  | The bcrypt hash of the password used to protect your instance of Erin. | Hash of `secure-password` |
+| `AUTH_SECRET`           | `string`  | The bcrypt hash of the password used to protect your instance of Erin. (Required when `AUTH_ENABLED` is true. Erin refuses to start with the hash of `secure-password` used by previous versions) | None |
 | `APP_TITLE`             | `string`  | The custom title that you would like to display in the browser's tab. (Tip: You can use `[VIDEO_TITLE]` here if you want Erin to dynamically display the title of the current image or video.) | Erin - TikTok feed for your own media |
 | `AUTOPLAY_ENABLED`      | `boolean` | Whether autoplay should be enabled. (This parameter is case sensitive) (Possible values : true, false) | false |
 | `IMAGE_DISPLAY_DURATION` | `number` | How many seconds an image remains on screen before its timeline restarts or autoplay advances the feed. Positive decimals are supported. | 5 |

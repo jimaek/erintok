@@ -4,8 +4,8 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const http = require("node:http");
 const path = require("node:path");
-const { pipeline } = require("node:stream");
 const bcrypt = require("bcryptjs");
+const send = require("send");
 
 // Server configuration
 const PORT = 80;
@@ -14,18 +14,28 @@ const MEDIA_DIR = "/srv/videos";
 
 // User configuration (environment variables)
 const env = (name, fallback) => process.env[name] ?? fallback;
+const exitWithError = (message) => {
+  console.error(message);
+  process.exit(1);
+};
 const AUTH_ENABLED = env("AUTH_ENABLED", "true") === "true";
-const AUTH_SECRET = env(
-  "AUTH_SECRET",
-  "$2a$14$qRW8no8UDmSwIWM6KHwdRe1j/LMrxoP4NSM756RVodqeUq5HzG6t.",
-);
+const AUTH_SECRET = env("AUTH_SECRET", "");
+// Hash of "secure-password", the default value of previous versions
+const PUBLIC_AUTH_SECRET =
+  "$2a$14$qRW8no8UDmSwIWM6KHwdRe1j/LMrxoP4NSM756RVodqeUq5HzG6t.";
 
-if (AUTH_ENABLED && !/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(AUTH_SECRET)) {
-  console.error(
+if (AUTH_ENABLED && [PUBLIC_AUTH_SECRET, ""].includes(AUTH_SECRET))
+  exitWithError(
+    "AUTH_SECRET must be set to the bcrypt hash of your own password (or set AUTH_ENABLED to false).",
+  );
+if (AUTH_ENABLED && !/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(AUTH_SECRET))
+  exitWithError(
     "AUTH_SECRET is not a valid bcrypt hash. Make sure it has no surrounding quotes, and that its dollar signs were not interpolated.",
   );
-  process.exit(1);
-}
+if (process.env.PUBLIC_URL)
+  console.warn(
+    "PUBLIC_URL is no longer used: Erin listens on port 80 over plain HTTP. Put a reverse proxy in front of it for HTTPS.",
+  );
 
 // React variables, injected into index.html
 const REACT_VARIABLES = {
@@ -57,35 +67,21 @@ const ASSET_EXTENSIONS = new Set([
   ".jpg",
   ".png",
 ]);
-const MIME_TYPES = {
-  ".css": "text/css; charset=utf-8",
-  ".ico": "image/x-icon",
-  ".jpeg": "image/jpeg",
-  ".jpg": "image/jpeg",
-  ".js": "text/javascript; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".mp4": "video/mp4",
-  ".ogg": "video/ogg",
-  ".png": "image/png",
-  ".webm": "video/webm",
-  ".webmanifest": "application/manifest+json",
-  ".webp": "image/webp",
-};
 
 // Helpers - Responses
-const send = (res, statusCode, headers = {}) => {
+const reply = (res, statusCode, headers = {}) => {
   res.writeHead(statusCode, headers);
   res.end();
 };
-const sendJSON = (req, res, data) => {
+const replyJSON = (res, data) => {
   const body = Buffer.from(JSON.stringify(data));
   res.writeHead(200, {
     "Content-Type": "application/json; charset=utf-8",
     "Content-Length": body.length,
   });
-  res.end(req.method === "HEAD" ? undefined : body);
+  res.end(body);
 };
-const sendIndex = (req, res) => {
+const replyIndex = (req, res) => {
   res.writeHead(200, {
     "Content-Type": "text/html; charset=utf-8",
     "Content-Length": INDEX_HTML.length,
@@ -94,185 +90,145 @@ const sendIndex = (req, res) => {
   res.end(req.method === "HEAD" ? undefined : INDEX_HTML);
 };
 
+// Serves a file with support for HEAD, Range and conditional requests
+const replyFile = (req, res, root, filePath, options = {}) =>
+  send(req, encodeURI(filePath), { root, index: false, ...options })
+    .on("error", (err) => {
+      if (err.status >= 500 || !err.status) console.error(err);
+      if (res.headersSent) res.destroy();
+      else reply(res, err.status ?? 500);
+    })
+    .pipe(res);
+
 // Helpers - Files
-const statOrNull = (filePath) => fsp.stat(filePath).catch(() => null);
+// Returns null when the file doesn't exist (any other error is thrown)
+const statIfExists = (filePath) =>
+  fsp.stat(filePath).catch((err) => {
+    if (["ENOENT", "ENOTDIR", "ELOOP"].includes(err.code)) return null;
+    throw err;
+  });
 const isInside = (filePath, dir) =>
   filePath === dir || filePath.startsWith(`${dir}${path.sep}`);
 
-const isNotModified = (req, etag, mtime) => {
-  const ifNoneMatch = req.headers["if-none-match"];
-  if (ifNoneMatch)
-    return ifNoneMatch
-      .split(",")
-      .some((tag) => ["*", etag].includes(tag.trim().replace(/^W\//, "")));
-
-  const ifModifiedSince = Date.parse(req.headers["if-modified-since"]);
-  return Math.floor(mtime.getTime() / 1000) * 1000 <= ifModifiedSince;
-};
-
-// Returns { start, end }, null when the whole file should be sent, or false when unsatisfiable
-// (multiple ranges are not supported, so the whole file is sent instead)
-const parseRange = (header, size) => {
-  const [, first, last] = /^bytes=(\d*)-(\d*)$/.exec(header ?? "") ?? [];
-  if (!first && !last) return null;
-
-  // Suffix range : the last N bytes
-  if (!first)
-    return Number(last) > 0 && size > 0
-      ? { start: Math.max(size - Number(last), 0), end: size - 1 }
-      : false;
-
-  if (last && Number(last) < Number(first)) return null;
-  if (Number(first) >= size) return false;
-  return {
-    start: Number(first),
-    end: last ? Math.min(Number(last), size - 1) : size - 1,
-  };
-};
-
-const sendFile = (req, res, filePath, stats) => {
-  const etag = `"${stats.mtime.getTime().toString(36)}${stats.size.toString(36)}"`;
-  const lastModified = stats.mtime.toUTCString();
-
-  res.setHeader("Accept-Ranges", "bytes");
-  res.setHeader("ETag", etag);
-  res.setHeader("Last-Modified", lastModified);
-  res.setHeader(
-    "Content-Type",
-    MIME_TYPES[path.extname(filePath).toLowerCase()] ??
-      "application/octet-stream",
-  );
-
-  if (isNotModified(req, etag, stats.mtime)) return send(res, 304);
-
-  // Range requests (required for video seeking, especially on Safari)
-  const ifRange = req.headers["if-range"];
-  const range =
-    !ifRange || [etag, lastModified].includes(ifRange)
-      ? parseRange(req.headers.range, stats.size)
-      : null;
-  if (range === false)
-    return send(res, 416, { "Content-Range": `bytes */${stats.size}` });
-
-  const { start, end } = range || { start: 0, end: stats.size - 1 };
-  if (range) {
-    res.statusCode = 206;
-    res.setHeader("Content-Range", `bytes ${start}-${end}/${stats.size}`);
-  }
-  res.setHeader("Content-Length", end - start + 1);
-
-  if (req.method === "HEAD" || end < start) return res.end();
-  pipeline(fs.createReadStream(filePath, { start, end }), res, () => {});
-};
-
 const listDirectory = async (dirPath) => {
-  const entries = await fsp.readdir(dirPath, { withFileTypes: true });
-  const items = await Promise.all(
-    entries.map(async (entry) => {
-      // Follow symbolic links, and skip broken ones
-      const stats = await statOrNull(path.join(dirPath, entry.name));
-      if (!stats) return null;
+  const items = [];
+  for (const entry of await fsp.readdir(dirPath, { withFileTypes: true })) {
+    // Follow symbolic links, and skip broken ones
+    let isDir = entry.isDirectory();
+    if (entry.isSymbolicLink()) {
+      const stats = await statIfExists(path.join(dirPath, entry.name));
+      if (!stats) continue;
+      isDir = stats.isDirectory();
+    }
 
-      const isDir = stats.isDirectory();
-      return {
-        name: isDir ? `${entry.name}/` : entry.name,
-        size: stats.size,
-        url: `./${encodeURIComponent(entry.name)}${isDir ? "/" : ""}`,
-        mod_time: stats.mtime.toISOString(),
-        is_dir: isDir,
-        is_symlink: entry.isSymbolicLink(),
-      };
-    }),
-  );
+    items.push({
+      name: isDir ? `${entry.name}/` : entry.name,
+      url: `./${encodeURIComponent(entry.name)}${isDir ? "/" : ""}`,
+      is_dir: isDir,
+      is_symlink: entry.isSymbolicLink(),
+    });
+  }
 
   // Directories first, then alphabetical order
-  return items
-    .filter(Boolean)
-    .sort(
-      (a, b) =>
-        b.is_dir - a.is_dir ||
-        a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
-    );
+  return items.sort(
+    (a, b) =>
+      b.is_dir - a.is_dir ||
+      a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
+  );
 };
 
 // Helpers - Authentication
-const safeEqual = (a, b) => {
-  const hashA = crypto.createHash("sha256").update(a).digest();
-  const hashB = crypto.createHash("sha256").update(b).digest();
-  return crypto.timingSafeEqual(hashA, hashB);
+const sha256 = (value) => crypto.createHash("sha256").update(value).digest();
+const safeEqual = (a, b) => crypto.timingSafeEqual(sha256(a), sha256(b));
+
+// bcrypt is slow by design, so passwords are checked one at a time and excess attempts
+// are rejected, preventing floods of login attempts from starving the server.
+// The verified password is cached, so that returning users skip bcrypt altogether.
+const MAX_PENDING_CHECKS = 5;
+let pendingChecks = 0;
+let checksQueue = Promise.resolve();
+let verifiedPasswordDigest = null;
+
+// Returns "granted", "denied", or "busy"
+const checkPassword = async (password) => {
+  const digest = sha256(password);
+  if (
+    verifiedPasswordDigest &&
+    crypto.timingSafeEqual(digest, verifiedPasswordDigest)
+  )
+    return "granted";
+  if (pendingChecks >= MAX_PENDING_CHECKS) return "busy";
+
+  pendingChecks++;
+  const check = checksQueue.then(() => bcrypt.compare(password, AUTH_SECRET));
+  checksQueue = check.catch(() => {});
+  try {
+    if (!(await check)) return "denied";
+    verifiedPasswordDigest = digest;
+    return "granted";
+  } finally {
+    pendingChecks--;
+  }
 };
 
 // Accepts either the hash provided as a query parameter, or Basic Authentication
 // (in which case the hash is sent back to the client for subsequent requests)
+// Returns "granted", "denied", or "busy"
 const authenticate = async (req, res, url) => {
-  if (safeEqual(url.searchParams.get("hash") ?? "", AUTH_SECRET)) return true;
+  if (safeEqual(url.searchParams.get("hash") ?? "", AUTH_SECRET))
+    return "granted";
 
   const [scheme, credentials] = (req.headers.authorization ?? "").split(" ");
-  if (scheme?.toLowerCase() !== "basic" || !credentials) return false;
+  if (scheme?.toLowerCase() !== "basic" || !credentials) return "denied";
 
   // Browsers encode credentials with btoa(), hence Latin-1
   const decoded = Buffer.from(credentials, "base64").toString("latin1");
   const separator = decoded.indexOf(":");
-  if (separator === -1 || decoded.slice(0, separator) !== "Erin") return false;
-  if (!(await bcrypt.compare(decoded.slice(separator + 1), AUTH_SECRET)))
-    return false;
+  if (separator === -1 || decoded.slice(0, separator) !== "Erin")
+    return "denied";
 
-  res.setHeader("X-ERIN-HASH", AUTH_SECRET);
-  return true;
+  const access = await checkPassword(decoded.slice(separator + 1));
+  if (access === "granted") res.setHeader("X-ERIN-HASH", AUTH_SECRET);
+  return access;
 };
 
 // Handlers
 const handleMedia = async (req, res, url, urlPath) => {
-  // CORS
-  res.setHeader("Vary", "Origin");
-  if (req.headers.origin) {
-    res.setHeader("Access-Control-Allow-Origin", req.headers.origin);
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-    res.setHeader(
-      "Access-Control-Expose-Headers",
-      "Authorization, X-ERIN-HASH",
-    );
-  }
-
-  // CORS - Preflight
-  if (req.method === "OPTIONS")
-    return send(res, 204, {
-      "Access-Control-Allow-Methods": "GET, HEAD",
-      "Access-Control-Allow-Headers": "Authorization",
-      "Access-Control-Max-Age": "3600",
-    });
-
   if (!["GET", "HEAD"].includes(req.method))
-    return send(res, 405, { Allow: "GET, HEAD, OPTIONS" });
+    return reply(res, 405, { Allow: "GET, HEAD" });
 
   // Authentication (no WWW-Authenticate header, to prevent the browser's prompt)
-  if (AUTH_ENABLED && !(await authenticate(req, res, url)))
-    return send(res, 401);
+  if (AUTH_ENABLED) {
+    const access = await authenticate(req, res, url);
+    if (access === "busy") return reply(res, 429, { "Retry-After": "5" });
+    if (access === "denied") return reply(res, 401);
+  }
 
   // File server
-  const filePath = path.join(MEDIA_DIR, urlPath.slice("/media".length));
-  const stats = await statOrNull(filePath);
-  if (stats?.isDirectory())
-    return sendJSON(req, res, await listDirectory(filePath));
-  if (!stats?.isFile()) return send(res, 404);
-  return sendFile(req, res, filePath, stats);
+  const filePath = urlPath.slice("/media".length);
+  const stats = await statIfExists(path.join(MEDIA_DIR, filePath));
+  if (stats?.isDirectory()) {
+    // HEAD is only used to check credentials : skip the listing
+    if (req.method === "HEAD")
+      return reply(res, 200, {
+        "Content-Type": "application/json; charset=utf-8",
+      });
+    return replyJSON(res, await listDirectory(path.join(MEDIA_DIR, filePath)));
+  }
+  return replyFile(req, res, MEDIA_DIR, filePath, { dotfiles: "allow" });
 };
 
-const handleApp = async (req, res, urlPath) => {
+const handleApp = (req, res, urlPath) => {
   if (!["GET", "HEAD"].includes(req.method))
-    return send(res, 405, { Allow: "GET, HEAD" });
+    return reply(res, 405, { Allow: "GET, HEAD" });
 
   // React app
   if (!ASSET_EXTENSIONS.has(path.extname(urlPath).toLowerCase()))
-    return sendIndex(req, res);
+    return replyIndex(req, res);
 
   // React assets (never exposing the media directory, which lives inside)
-  const filePath = path.join(APP_DIR, urlPath);
-  const stats = isInside(filePath, MEDIA_DIR)
-    ? null
-    : await statOrNull(filePath);
-  if (!stats?.isFile()) return send(res, 404);
-  return sendFile(req, res, filePath, stats);
+  if (isInside(path.join(APP_DIR, urlPath), MEDIA_DIR)) return reply(res, 404);
+  return replyFile(req, res, APP_DIR, urlPath);
 };
 
 // Server
@@ -284,16 +240,16 @@ const server = http.createServer(async (req, res) => {
       // Decoded and normalized, which prevents path traversal ("/../" can't go above "/")
       urlPath = path.posix.normalize(decodeURIComponent(url.pathname));
     } catch {
-      return send(res, 400);
+      return reply(res, 400);
     }
 
     if (urlPath.startsWith("/media/"))
       await handleMedia(req, res, url, urlPath);
-    else await handleApp(req, res, urlPath);
+    else handleApp(req, res, urlPath);
   } catch (err) {
     console.error(err);
     if (res.headersSent) res.destroy();
-    else send(res, 500);
+    else reply(res, 500);
   }
 });
 
