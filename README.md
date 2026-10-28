@@ -21,19 +21,17 @@ for a self-hostable app that can show filtered videos using TikTok's interface, 
 
 Erin has all these features implemented :
 - Display your own images and videos using TikTok's swipe feed
-- Mask the media you don't want to see in your feed\*
-- Choose which feed (playlist) you want to play\*\*
+- Tap anywhere to play / pause, and press and hold the left or right side of the screen to play at 2x speed
+- Seek by tapping or dragging anywhere on the progress bar, or using your keyboard (arrows, and space to play / pause)
+- Choose which feed (playlist) you want to play\*
 - Autoplay your feed without even swiping
-- Seek forward and backward using your keyboard, or using double taps
-- Enter / Exit fullscreen using a double tap in the center
-- Share any media item with a direct link
-- Show media and playlist metadata using TikTok's UI\*\*\*
+- Show media and playlist metadata using TikTok's UI\*\*
 - Simple lazy-loading mechanism for your media
 - Automatic media naming based on file name
 - Simple and optional security using a master password
 - Support for Horizontal and Vertical scroll direction
 - Support for starting video playback from the start, middle, or random point in the video
-- Support for custom styling\*\*\*\*
+- Support for custom styling\*\*\*
 - Support for Docker / proxy deployment
 
 On top of these, please note that Erin is only a React app served by a small Node.js server listening on port 80.
@@ -41,13 +39,11 @@ The server takes care of authentication, serving your media files, and serving t
 It only speaks plain HTTP: the recommended setup is to run Erin behind your own reverse proxy (nginx, Caddy, Traefik, ...)
 which takes care of HTTPS. See [Deployment and Examples](#deployment-and-examples).
 
-> \*: You can mask media to hide it from your feed. Should you want to see which items were masked, and even unmask them, you can long-press the `Mask` button, and the manager will open.
+> \*: By default, Erin will create a random feed from all the media in your folder and its subdirectories. However, if you would like to create custom feeds (playlists), you can create subdirectories and organize your images and videos accordingly. For example: `http://my-server.tld/directory-a` will create a feed from the media located in the `/directory-a` directory, and it works with any path (so, nested folders are supported).
 
-> \*\*: By default, Erin will create a random feed from all the media in your folder and its subdirectories. However, if you would like to create custom feeds (playlists), you can create subdirectories and organize your images and videos accordingly. For example: `http://my-server.tld/directory-a` will create a feed from the media located in the `/directory-a` directory, and it works with any path (so, nested folders are supported).
+> \*\*: You can show a channel (with an avatar and name), a caption and a link for your media using an adjacent metadata file. It must match the associated media filename while replacing the extension with JSON: `my-video.mp4` and `my-photo.jpg` use `my-video.json` and `my-photo.json`. Videos support `video_title`, `video_caption`, and `video_link`, as [shown here](/examples/video-metadata.json). Images support `image_title`, `image_caption`, and `image_link`, as [shown here](/examples/image-metadata.json). Images ignore `video_*` fields and videos ignore `image_*` fields. Captions may contain trusted raw HTML for custom styling and effects. You may also define [folder-level metadata](/examples/folder-metadata.json) in a file named `metadata.json`; its channel name and avatar are inherited by all media in that folder when item-specific channel metadata is absent.
 
-> \*\*\*: You can show a channel (with an avatar and name), a caption and a link for your media using an adjacent metadata file. It must match the associated media filename while replacing the extension with JSON: `my-video.mp4` and `my-photo.jpg` use `my-video.json` and `my-photo.json`. Videos support `video_title`, `video_caption`, and `video_link`, as [shown here](/examples/video-metadata.json). Images support `image_title`, `image_caption`, and `image_link`, as [shown here](/examples/image-metadata.json). Images ignore `video_*` fields and videos ignore `image_*` fields. Captions may contain trusted raw HTML for custom styling and effects. You may also define [folder-level metadata](/examples/folder-metadata.json) in a file named `metadata.json`; its channel name and avatar are inherited by all media in that folder when item-specific channel metadata is absent.
-
-> \*\*\*\*: You can inject your own stylesheet to customize the appearance of the app by doing two things: 1) set `USE_CUSTOM_SKIN` to `true`, and 2) mount a `custom.css` file onto `/srv/custom.css` in your container.
+> \*\*\*: You can inject your own stylesheet to customize the appearance of the app by doing two things: 1) set `USE_CUSTOM_SKIN` to `true`, and 2) mount a `custom.css` file onto `/srv/custom.css` in your container.
 
 For more information, read about [Configuration](#configuration).
 
@@ -128,14 +124,14 @@ To run Erin, you will need to set the following environment variables in a `.env
 | `APP_TITLE`             | `string`  | The custom title that you would like to display in the browser's tab. (Tip: You can use `[VIDEO_TITLE]` here if you want Erin to dynamically display the title of the current image or video.) | Erin - TikTok feed for your own media |
 | `AUTOPLAY_ENABLED`      | `boolean` | Whether autoplay should be enabled. (This parameter is case sensitive) (Possible values : true, false) | false |
 | `IMAGE_DISPLAY_DURATION` | `number` | How many seconds an image remains on screen before its timeline restarts or autoplay advances the feed. Positive decimals are supported. | 5 |
-| `START_MUTED`           | `boolean` | Whether videos should start muted. (This parameter is case sensitive) (Possible values : true, false) | true |
+| `START_MUTED`           | `boolean` | Whether videos should be muted. There is no mute button in the app. (This parameter is case sensitive) (Possible values : true, false) | true |
 | `PROGRESS_BAR_POSITION` | `string`  | Where the progress bar should be located on the screen. (This parameter is case sensitive) (Possible values : bottom, top) | bottom |
 | `IGNORE_HIDDEN_PATHS`   | `boolean` | Whether all hidden files and directories (starting with a dot) should be ignored by Erin, and not loaded or scanned altogether | false |
 | `SCROLL_DIRECTION`      | `string`  | The scroll direction of your media feed. (Possible values : vertical, horizontal ) | vertical |
 | `USE_CUSTOM_SKIN`       | `boolean` | Whether a custom skin should be loaded on startup. (Possible values : true, false) | false |
 | `VIDEO_START_POSITION`  | `string`  | Where videos start playing. (Possible values : start, middle, random) | start |
 
-> **Note :** Browsers may block autoplay with sound before the user interacts with the page when `START_MUTED` is set to `false`.
+> **Note :** Browsers may block autoplay with sound before the user interacts with the page when `START_MUTED` is set to `false`: tap the screen to start playback.
 
 > **Tip :** To generate a secure hash for your instance, use the following command :
 

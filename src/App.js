@@ -2,19 +2,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // Components
-import BottomNavbar from "./components/BottomNavbar";
 import VideoFeed from "./components/VideoFeed";
 
 // Assets
-import { faCompactDisc } from "@fortawesome/free-solid-svg-icons";
+import { faCompactDisc, faPlay } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { usePrevious } from "@uidotdev/usehooks";
-import BlacklistManager from "./components/BlacklistManager";
 import BottomMetadata from "./components/BottomMetadata";
-import PlaylistsViewer from "./components/PlaylistsViewer";
-import PlaylistGallery from "./components/PlaylistGallery";
 import "./App.css";
-import SideControls from "./components/SideControls";
 
 const App = () => {
   // Misc - General niceties
@@ -34,57 +29,12 @@ const App = () => {
   const _storeSecret = (s) => {
     localStorage.setItem("erin_secret", s);
   };
-  const _getBlacklist = () => {
-    const l = localStorage.getItem("erin_blacklist");
-    if (!l) return [];
-    return JSON.parse(l);
-  };
-  const _addToBlackList = (v) => {
-    let l = _getBlacklist();
-    l = [...l, v];
-    localStorage.setItem("erin_blacklist", JSON.stringify(l));
-  };
-  const _removeFromBlacklist = (v) => {
-    let l = _getBlacklist();
-    l = l.filter((_v) => v.url !== _v.url);
-    localStorage.setItem("erin_blacklist", JSON.stringify(l));
-  };
   const _isVideo = (file) =>
     ["mp4", "ogg", "webm"].includes(file.name.toLowerCase().split(".").at(-1));
   const _isImage = (file) =>
     ["jpg", "jpeg", "png", "webp"].includes(
       file.name.toLowerCase().split(".").at(-1),
     );
-  const _getShareFragment = (v) =>
-    window._btoaSafe(
-      v.url
-        .replace(window.PUBLIC_URL, "")
-        .split("?")[0]
-    );
-  const _copyText = async (text) => {
-    if (navigator.clipboard && window.isSecureContext) {
-      try {
-        await navigator.clipboard.writeText(text);
-        return;
-      } catch {}
-    }
-
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.setAttribute("readonly", "");
-    textarea.style.position = "fixed";
-    textarea.style.opacity = "0";
-
-    document.body.appendChild(textarea);
-    textarea.select();
-
-    try {
-      if (!document.execCommand("copy"))
-        throw new Error("Unable to copy share URL");
-    } finally {
-      document.body.removeChild(textarea);
-    }
-  };
   const _isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
   const _toAuthenticatedUrl = (url) => `${url}?hash=${secureHash}`;
   const _veryFirsPageTitle = useMemo(() => document.title, []);
@@ -123,7 +73,6 @@ const App = () => {
     if (!s) return s;
     return decodeURIComponent(s.replace(/%(?![0-9a-fA-F]+)/g, "%25"));
   };
-  window._btoaSafe = (s) => btoa(unescape(encodeURIComponent(s)));
 
   const _scrollDirection = document
     .querySelector("html")
@@ -140,18 +89,11 @@ const App = () => {
   const [loading, setLoading] = useState(false);
   const [hasReachedRemoteServer, setHasReachedRemoteServer] = useState(false);
 
-  // Member - Determines whether the audio is currently muted
-  const [muted, setMuted] = useState(window.START_MUTED ?? true);
-  const toggleMute = () => {
-    setMuted(!muted);
-  };
+  // Member - Determines whether the audio is muted
+  const muted = window.START_MUTED ?? true;
 
-  const feedRef = useRef(null);
-
-  // Member - Saves a { url , title , extension , filename , playlist , metadataURL  } dictionary for every video discovered
-  // "allVideos" and "videos" differ in that "allVideos" hold all the files regardless of current playlist
-  // while "videos" holds only the current playlist's videos ( = all videos if no playlist, or a segment of it if any )
-  const [allVideos, setAllVideos] = useState([]);
+  // Member - Saves a { url , title , extension , filename , playlist , metadataURL  } dictionary for every video
+  // of the current playlist ( = all videos if no playlist, or a segment of it if any )
   const [videos, setVideos] = useState([]);
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const [currentVideoMetadata, setCurrentVideoMetadata] = useState(false);
@@ -185,8 +127,7 @@ const App = () => {
             ...r,
           });
 
-          const titleField =
-            v.type === "image" ? "image_title" : "video_title";
+          const titleField = v.type === "image" ? "image_title" : "video_title";
           if (r[titleField]) _updatePageTitle({ title: r[titleField] });
         });
     }
@@ -230,171 +171,8 @@ const App = () => {
     _freshPlaylists.current = playlists;
   }, [playlists]);
 
-  // Member - Trick to trigger state updates on localStorage updates
-  const [blackListUpdater, setBlacklistUpdater] = useState(0);
-
-  // Dynamically-computed - Visible videos
-  const visibleVideos = useMemo(
-    () =>
-      videos.filter(
-        (_v) =>
-          !_getBlacklist()
-            .map((v) => v.url)
-            .includes(_v.url),
-      ),
-    [videos, blackListUpdater], // eslint-disable-line react-hooks/exhaustive-deps
-  );
-
-  // Video control - Download the current video
-  const download = () => {
-    const url = visibleVideos[currentVideoIndex].url;
-
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = url.split("?")[0].split("/").pop();
-    anchor.target = "_blank";
-
-    document.body.appendChild(anchor);
-
-    anchor.click();
-
-    document.body.removeChild(anchor);
-  };
-
-  // Video side control - Share a link to the video
-  const share = async () => {
-    const videoMetadata = visibleVideos[currentVideoIndex];
-    const shareURL = new URL("/", window.location.origin);
-    shareURL.searchParams.set("play", _getShareFragment(videoMetadata));
-
-    const shareData = {
-      title: videoMetadata.title,
-      url: shareURL.toString(),
-    };
-
-    let canUseNativeShare = typeof navigator.share === "function";
-    if (canUseNativeShare && typeof navigator.canShare === "function") {
-      try {
-        canUseNativeShare = navigator.canShare(shareData);
-      } catch {
-        canUseNativeShare = false;
-      }
-    }
-
-    if (canUseNativeShare) {
-      try {
-        await navigator.share(shareData);
-        return { status: "shared" };
-      } catch (error) {
-        if (error.name === "AbortError") return { status: "cancelled" };
-      }
-    }
-
-    try {
-      await _copyText(shareData.url);
-      return { status: "copied" };
-    } catch {
-      return { status: "manual-copy", url: shareData.url };
-    }
-  };
-
-  // Video control - Blacklist
-  const blacklist = () => {
-    const video = visibleVideos[currentVideoIndex];
-    _addToBlackList(video);
-
-    if (
-      currentVideoIndex === visibleVideos.length - 1 &&
-      visibleVideos.length > 1
-    ) {
-      document
-        .querySelector(".feed")
-        .scrollBy(
-          _scrollDirection === "vertical"
-            ? { top: -1, left: 0, behavior: "smooth" }
-            : { top: 0, left: -1, behavior: "smooth" },
-        );
-    } else {
-      document
-        .querySelector(".feed")
-        .scrollBy(
-          _scrollDirection === "vertical"
-            ? { top: 1, left: 0, behavior: "smooth" }
-            : { top: 0, left: 1, behavior: "smooth" },
-        );
-    }
-
-    setTimeout(
-      () => {
-        setBlacklistUpdater(blackListUpdater + 1);
-
-        // The last video is about to be removed - An array of 2 will become an array of 1
-        if (visibleVideos.length === 2) setCurrentVideoIndex(0);
-        // There are more than 2 videos, and we have removed one in the middle -> We adjust the current index
-        else if (
-          visibleVideos.length > 2 &&
-          previousVideoIndex <= visibleVideos.length - 1 &&
-          currentVideoIndex > 0 &&
-          currentVideoIndex === visibleVideos.length - 2 &&
-          previousVideoIndex > 0
-        ) {
-          setCurrentVideoIndex(currentVideoIndex - 1);
-        }
-      },
-
-      // Show no delay when the last video is removed
-      visibleVideos.length > 1 ? 800 : 0,
-    );
-  };
-
-  // Video control - Toggle Play / Pause
+  // Member - Whether the focused media is playing (a play icon is shown otherwise)
   const [isPlaying, setIsPlaying] = useState(true);
-  const togglePlayPause = () => {
-    feedRef.current?.togglePlayback();
-  };
-
-  // Member - Manage blacklist UI
-  const [blacklistOpen, setBlacklistOpen] = useState(false);
-  const openBlacklist = () => {
-    setBlacklistOpen(true);
-  };
-  const hideBlacklist = () => {
-    setBlacklistOpen(false);
-  };
-  const removeFromBlacklist = (v) => {
-    _removeFromBlacklist(v);
-    setBlacklistUpdater(blackListUpdater + 1);
-  };
-
-  // Member - Manage playlist viewer UI
-  const [playlistsViewerOpen, setPlaylistsViewerOpen] = useState(false);
-  const openPlaylistsViewer = () => {
-    setPlaylistsViewerOpen(true);
-  };
-  const hidePlaylistsViewer = () => {
-    setPlaylistsViewerOpen(false);
-  };
-
-  // Member - Manage playlist gallery UI
-  const [activePlaylistForGallery, setActivePlaylistForGallery] = useState({});
-  const [playlistGalleryOpen, setPlaylistGalleryOpen] = useState(false);
-  const openPlaylistGallery = (playlist) => {
-    setActivePlaylistForGallery({
-      name: playlist.name,
-      videos: allVideos.filter(
-        (_v) =>
-          _v.playlist === playlist.name &&
-          !_getBlacklist()
-            .map((v) => v.url)
-            .includes(_v.url),
-      ),
-      metadata: playlist.metadata,
-    });
-    setPlaylistGalleryOpen(true);
-  };
-  const hidePlaylistGallery = () => {
-    setPlaylistGalleryOpen(false);
-  };
 
   // Method - Test connectivity with the remote server
   const attemptToReachRemoteServer = (evt) => {
@@ -486,10 +264,7 @@ const App = () => {
       let _videoFiles = {};
       for (let i = 0; i < files.length; i++) {
         const current = files[i];
-        const _filenameStem = current.name
-          .split(".")
-          .slice(0, -1)
-          .join(".");
+        const _filenameStem = current.name.split(".").slice(0, -1).join(".");
         const _id = current.url.split(".").slice(0, -1).join(".");
 
         if (!_filenameStem || current.is_dir) continue;
@@ -544,9 +319,6 @@ const App = () => {
       //   _storeVideos(_videoFiles);
       // } catch (_) {}
 
-      // Record all videos for later use
-      setAllVideos(_videoFiles);
-
       // Playlist extraction
       const _allPlaylists = [
         ...new Set(_videoFiles.map((v) => v.playlist).filter((p) => p)),
@@ -568,40 +340,10 @@ const App = () => {
           currentPlaylist.length - 1,
         );
 
-      if (currentPlaylist) {
+      if (currentPlaylist)
         _videoFiles = _videoFiles.filter((v) => v.playlist === currentPlaylist);
-        setActivePlaylistForGallery({
-          name: currentPlaylist,
-          videos: _videoFiles,
-        });
-      }
 
-      // If any video is provided in the URL, make sure that it appears first ( = "share" feature )
-      const query = new URLSearchParams(window.location.search);
-      let currentVideoFromURL = null;
-      if (query.has("play")) {
-        const suppliedFragment = query.get("play");
-
-        if (!currentPlaylist)
-          currentVideoFromURL = _videoFiles.find(
-            (v) => _getShareFragment(v) === suppliedFragment,
-          );
-        else
-          currentVideoFromURL = _videoFiles.find(
-            (v) => window._btoaSafe(v.filename) === suppliedFragment,
-          );
-
-        if (currentVideoFromURL)
-          _videoFiles = _videoFiles.filter(
-            (v) => v.url !== currentVideoFromURL.url,
-          );
-      }
-
-      setVideos(() => {
-        return currentVideoFromURL
-          ? [currentVideoFromURL, ..._shuffleArray(_videoFiles)]
-          : _shuffleArray(_videoFiles);
-      });
+      setVideos(_shuffleArray(_videoFiles));
 
       setLoading(false);
     });
@@ -612,26 +354,23 @@ const App = () => {
     () => {
       return (
         <VideoFeed
-          ref={feedRef}
-          key={blackListUpdater}
           initialIndex={
             currentVideoIndex > 0
-              ? previousVideoIndex <= visibleVideos.length - 1 &&
+              ? previousVideoIndex <= videos.length - 1 &&
                 previousVideoIndex > 0
                 ? currentVideoIndex - 2
                 : currentVideoIndex - 1
               : 0
           }
           jumpToEnd={
-            previousVideoIndex === visibleVideos.length &&
-            visibleVideos.length > 1
+            previousVideoIndex === videos.length && videos.length > 1
               ? true
               : false
           }
           jumpBackForward={
-            previousVideoIndex !== visibleVideos.length && currentVideoIndex > 1
+            previousVideoIndex !== videos.length && currentVideoIndex > 1
           }
-          videos={visibleVideos}
+          videos={videos}
           muted={muted}
           onFocusVideo={handleVideoFocus}
           onFinishVideo={handleVideoFinish}
@@ -639,7 +378,7 @@ const App = () => {
         />
       );
     },
-    [visibleVideos, muted], // eslint-disable-line react-hooks/exhaustive-deps
+    [videos, muted], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Hook - On mount
@@ -753,7 +492,7 @@ const App = () => {
             )}
 
             {/* STATE - Reached remote server but no media was found */}
-            {hasReachedRemoteServer && visibleVideos.length === 0 && (
+            {hasReachedRemoteServer && videos.length === 0 && (
               <div className="empty-state">
                 <div className="icon-wrapper">
                   <img src={`/logo.png`} alt="Erin logo" />
@@ -763,65 +502,24 @@ const App = () => {
                 <button type="button" onClick={_reloadPage}>
                   Refresh
                 </button>
-
-                {_getBlacklist().length > 0 && (
-                  <>
-                    <button
-                      type="button"
-                      className="btn-alternate"
-                      onClick={openBlacklist}
-                    >
-                      Manage masked media
-                    </button>
-                    <BlacklistManager
-                      visible={blacklistOpen}
-                      videos={_getBlacklist()}
-                      onClose={hideBlacklist}
-                      onUnmask={removeFromBlacklist}
-                    />
-                  </>
-                )}
               </div>
             )}
 
             {/* STATE - Reached remote server and retrieved media */}
-            {hasReachedRemoteServer && visibleVideos.length > 0 && (
+            {hasReachedRemoteServer && videos.length > 0 && (
               <>
                 {Feed}
-                {visibleVideos[currentVideoIndex] && (
+                {videos[currentVideoIndex] && (
                   <BottomMetadata
-                    video={visibleVideos[currentVideoIndex]}
+                    video={videos[currentVideoIndex]}
                     extraMetadata={currentVideoMetadata}
                   />
                 )}
-                <BottomNavbar
-                  onDownload={download}
-                  onToggleMute={toggleMute}
-                  isMuted={muted}
-                  isPlaying={isPlaying}
-                  onBlacklist={blacklist}
-                  onOpenBlacklist={openBlacklist}
-                  onOpenPlaylistsViewer={openPlaylistsViewer}
-                  onTogglePlayPause={togglePlayPause}
-                />
-                <SideControls onShare={share} />
-                <BlacklistManager
-                  visible={blacklistOpen}
-                  videos={_getBlacklist()}
-                  onClose={hideBlacklist}
-                  onUnmask={removeFromBlacklist}
-                />
-                <PlaylistsViewer
-                  visible={playlistsViewerOpen}
-                  playlists={playlists}
-                  onClose={hidePlaylistsViewer}
-                  onOpenPlaylistGallery={openPlaylistGallery}
-                />
-                <PlaylistGallery
-                  visible={playlistGalleryOpen}
-                  activePlaylist={activePlaylistForGallery}
-                  onClose={hidePlaylistGallery}
-                />
+                {!isPlaying && (
+                  <div className="paused-indicator">
+                    <FontAwesomeIcon icon={faPlay} />
+                  </div>
+                )}
               </>
             )}
           </>

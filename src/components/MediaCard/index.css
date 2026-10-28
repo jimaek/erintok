@@ -34,7 +34,7 @@ html[data-scroll-direction="horizontal"] .media {
   left: 0;
   width: 100%;
   z-index: 1;
-  height: calc(100% - 56px);
+  height: 100%;
   flex-shrink: 0;
 }
 

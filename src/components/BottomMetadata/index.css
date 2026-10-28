@@ -1,11 +1,19 @@
 .bottom-metadata {
   position: fixed;
-  bottom: 57px;
-  width: calc(100% - 60px); /* 60px is the width of the side controls */
+  bottom: 0;
+  width: 100%;
   z-index: 10;
   background: rgba(0, 0, 0, 0.1);
   padding-top: 8px;
   padding-bottom: 3px;
+  transition: opacity 0.15s ease;
+}
+/* Keep the title clear of the progress bar's hit area */
+body:has(.video-track.bottom) .bottom-metadata {
+  padding-bottom: 24px;
+}
+body.is-scrubbing .bottom-metadata {
+  opacity: 0;
 }
 .bottom-metadata .video-title {
   width: 100%;
@@ -69,8 +77,4 @@
   line-height: 125%;
   max-height: 50px;
   overflow: auto;
-}
-
-body.fullscreen .bottom-metadata {
-  bottom: 0;
 }
