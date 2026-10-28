@@ -1,11 +1,10 @@
 version: '3'
 services:
   erin:
-    image: mosswill/erin:latest
+    image: ghcr.io/jimaek/erintok:latest
     ports:
-      - "443:443"
+      - "80:80"
     volumes:
       - ./videos:/srv/videos:ro
     environment:
-      PUBLIC_URL: "https://localhost"
       AUTH_SECRET: "<YOUR-HASH>"

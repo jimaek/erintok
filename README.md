@@ -34,15 +34,16 @@ Erin has all these features implemented :
 - Support for Horizontal and Vertical scroll direction
 - Support for starting video playback from the start, middle, or random point in the video
 - Support for custom styling\*\*\*\*
-- Support for HTTP and HTTPS
 - Support for Docker / proxy deployment
 
-On top of these, please note that Erin is only a React app powered entirely by [Caddy](https://github.com/caddyserver/caddy).
-Caddy takes care of authentication, serving static files, and serving the React app all at once.
+On top of these, please note that Erin is only a React app served by a small Node.js server listening on port 80.
+The server takes care of authentication, serving your media files, and serving the React app all at once.
+It only speaks plain HTTP: the recommended setup is to run Erin behind your own reverse proxy (nginx, Caddy, Traefik, ...)
+which takes care of HTTPS. See [Deployment and Examples](#deployment-and-examples).
 
 > \*: You can mask media to hide it from your feed. Should you want to see which items were masked, and even unmask them, you can long-press the `Mask` button, and the manager will open.
 
-> \*\*: By default, Erin will create a random feed from all the media in your folder and its subdirectories. However, if you would like to create custom feeds (playlists), you can create subdirectories and organize your images and videos accordingly. For example: `https://my-server.tld/directory-a` will create a feed from the media located in the `/directory-a` directory, and it works with any path (so, nested folders are supported).
+> \*\*: By default, Erin will create a random feed from all the media in your folder and its subdirectories. However, if you would like to create custom feeds (playlists), you can create subdirectories and organize your images and videos accordingly. For example: `http://my-server.tld/directory-a` will create a feed from the media located in the `/directory-a` directory, and it works with any path (so, nested folders are supported).
 
 > \*\*\*: You can show a channel (with an avatar and name), a caption and a link for your media using an adjacent metadata file. It must match the associated media filename while replacing the extension with JSON: `my-video.mp4` and `my-photo.jpg` use `my-video.json` and `my-photo.json`. Videos support `video_title`, `video_caption`, and `video_link`, as [shown here](/examples/video-metadata.json). Images support `image_title`, `image_caption`, and `image_link`, as [shown here](/examples/image-metadata.json). Images ignore `video_*` fields and videos ignore `image_*` fields. Captions may contain trusted raw HTML for custom styling and effects. You may also define [folder-level metadata](/examples/folder-metadata.json) in a file named `metadata.json`; its channel name and avatar are inherited by all media in that folder when item-specific channel metadata is absent.
 
@@ -55,7 +56,16 @@ For more information, read about [Configuration](#configuration).
 Before proceeding, regardless of Docker, Docker Compose, or a standalone deployment, please make sure
 that you have created a `videos` directory containing all your media files. Later on, this directory will
 be made available to your instance of Erin (by binding a volume to your Docker container, or putting the directory
-next to your Caddyfile).
+at `/srv/videos` for a standalone deployment).
+
+The recommended setup is to run Erin behind your own reverse proxy, which takes care of HTTPS and forwards
+requests to Erin's port 80 over plain HTTP. Erin doesn't handle HTTPS itself.
+
+> **Note :** If you are upgrading from the previous Caddy-based image: `PUBLIC_URL` is no longer used,
+> Erin always listens on port 80 over HTTP, and `AUTH_SECRET` is now required when authentication is enabled.
+
+For a standalone deployment, build the app with `npm run build`, copy the `build` directory's contents into `/srv`,
+then run `npm ci --omit=dev` and `node index.js` (as root, to listen on port 80) from the `server` directory.
 
 ### Deploy with Docker
 
@@ -70,10 +80,10 @@ touch .env
 # Edit .env file ...
 
 # Option 1 : Run Erin attached to the terminal (useful for debugging)
-docker run --env-file .env -p <YOUR-PORT-MAPPING> -v ./videos:/srv/videos:ro mosswill/erin
+docker run --env-file .env -p <YOUR-PORT-MAPPING> -v ./videos:/srv/videos:ro ghcr.io/jimaek/erintok
 
 # Option 2 : Run Erin as a daemon
-docker run -d --env-file .env -p <YOUR-PORT-MAPPING> -v ./videos:/srv/videos:ro mosswill/erin
+docker run -d --env-file .env -p <YOUR-PORT-MAPPING> -v ./videos:/srv/videos:ro ghcr.io/jimaek/erintok
 ```
 
 > **Note :** A `sample.env` file is located at the root of the repository to help you get started
@@ -87,9 +97,9 @@ To help you get started quickly, a few example `docker-compose` files are locate
 
 Here's a description of every example :
 
-- `docker-compose.simple.yml`: Run Erin as a front-facing service on port 443, with environment variables supplied in the `docker-compose` file directly.
+- `docker-compose.proxy.yml` (recommended): A setup with Erin running on port 80, behind a proxy listening on port 443 that takes care of HTTPS.
 
-- `docker-compose.proxy.yml`: A setup with Erin running on port 80, behind a proxy listening on port 443.
+- `docker-compose.simple.yml`: Run Erin as a front-facing service on plain HTTP, port 80, with environment variables supplied in the `docker-compose` file directly.
 
 When your `docker-compose` file is on point, you can use the following commands :
 ```sh
@@ -113,9 +123,8 @@ To run Erin, you will need to set the following environment variables in a `.env
 
 | Parameter               | Type      | Description                | Default |
 | :---------------------- | :-------- | :------------------------- | ------- |
-| `PUBLIC_URL`            | `string`  | The public URL used to remotely access your instance of Erin. (Please include HTTP / HTTPS and the port if not standard 80 or 443. Do not include a trailing slash) (Read the [official Caddy documentation](https://caddyserver.com/docs/caddyfile/concepts#addresses)) | https://localhost |
 | `AUTH_ENABLED`          | `string`  | Whether Basic Authentication should be enabled. (This parameter is case sensitive) (Possible values : true, false) | true |
-| `AUTH_SECRET`           | `string`  | The secure hash of the password used to protect your instance of Erin. | Hash of `secure-password` |
+| `AUTH_SECRET`           | `string`  | The bcrypt hash of the password used to protect your instance of Erin. (Required when `AUTH_ENABLED` is true. Erin refuses to start with the hash of `secure-password` used by previous versions) | None |
 | `APP_TITLE`             | `string`  | The custom title that you would like to display in the browser's tab. (Tip: You can use `[VIDEO_TITLE]` here if you want Erin to dynamically display the title of the current image or video.) | Erin - TikTok feed for your own media |
 | `AUTOPLAY_ENABLED`      | `boolean` | Whether autoplay should be enabled. (This parameter is case sensitive) (Possible values : true, false) | false |
 | `IMAGE_DISPLAY_DURATION` | `number` | How many seconds an image remains on screen before its timeline restarts or autoplay advances the feed. Positive decimals are supported. | 5 |
@@ -131,7 +140,7 @@ To run Erin, you will need to set the following environment variables in a `.env
 > **Tip :** To generate a secure hash for your instance, use the following command :
 
 ```sh
-docker run caddy caddy hash-password --plaintext "your-new-password"
+docker run --rm ghcr.io/jimaek/erintok npx bcrypt "your-new-password" 14
 ```
 
 > **Note :** When using `docker-compose.yml` environment variables, if your password hash contains dollar signs: double them all, or else the app will crash.
@@ -143,29 +152,22 @@ Should you encounter any issue running Erin, please refer to the following commo
 
 > If none of these matches your case, feel free to open an issue.
 
-#### Erin is unreachable over HTTP / HTTPS
+#### Erin is unreachable
 
-Erin sits on top of a Caddy web server.
+Erin is served by a Node.js server that listens on port 80 over plain HTTP, for any hostname.
+It doesn't handle HTTPS: if you need it, put Erin behind a reverse proxy that terminates TLS.
 
 As a result :
 - You may be able to better troubleshoot the issue by reading your container logs.
-- You can check the [official Caddy documentation regarding addresses](https://caddyserver.com/docs/caddyfile/concepts#addresses).
-- You can check the [official Caddy documentation regarding HTTPS](https://caddyserver.com/docs/automatic-https).
-
-Other than that, please make sure that the following requirements are met :
-
 - If Erin runs as a standalone application without proxy :
-    - Make sure your server / firewall accepts incoming connections on Erin's port.
-    - Make sure your DNS configuration is correct. (Usually, such record should suffice : `A erin XXX.XXX.XXX.XXX` for `https://erin.your-server-tld`)
+    - Make sure your server / firewall accepts incoming connections on port 80 (or on the port you mapped with Docker).
+    - Make sure your DNS configuration is correct. (Usually, such record should suffice : `A erin XXX.XXX.XXX.XXX` for `http://erin.your-server-tld`)
     - Make sure your `.env` file is well configured according to the [Configuration](#configuration) section.
 
 - If Erin runs inside Docker / behind a proxy :
     - Perform the previous (standalone) verifications first.
-    - Make sure that `PUBLIC_URL` is well set in `.env`.
-    - Check your proxy forwarding rules.
+    - Check your proxy forwarding rules (they should target Erin's port 80 over HTTP).
     - Check your Docker networking setup.
-
-In any case, the crucial part is [Configuration](#configuration) and reading the official Caddy documentation.
 
 #### Erin says that no media was found on my server
 
@@ -218,16 +220,16 @@ Should you have any advice or idea to support more extensions (especially for Sa
 
 #### My custom password doesn't work
 
-There seems to be a few caveats when using Docker / Docker Compose with Caddy-generated password hashes.
+There seems to be a few caveats when using Docker / Docker Compose with bcrypt password hashes.
 
 These are the rules you should follow :
 - If you deployed Erin using the Docker CLI, via the command `docker run ... --env-file .env ...`, then your `AUTH_SECRET` should have no quote at all, and all the dollar signs should stay as they are without escape or doubling
 - If you deployed Erin using Docker Compose, via a `docker-compose.yml` file, then your `AUTH_SECRET` should have its dollar signs doubled. Example : `i$am$groot` becomes `i$$am$$groot`.
 
-That said, remember that your password hash must be generated with the following command :
+That said, remember that your password hash must be a bcrypt hash (hashes previously generated with `caddy hash-password` keep working), such as one generated with the following command :
 
 ```sh
-docker run caddy caddy hash-password --plaintext "your-new-password"
+docker run --rm ghcr.io/jimaek/erintok npx bcrypt "your-new-password" 14
 ```
 
 
@@ -241,7 +243,6 @@ Hey hey ! It's always a good idea to say thank you and mention the people and pr
 
 Big thanks to the individuals / teams behind these projects :
 - [tik-tok-clone](https://github.com/cauemustafa/tik-tok-clone) : For the base TikTok UI and smooth interaction.
-- [Caddy](https://github.com/caddyserver/caddy) : For the lightweight and powerful web server.
 - The countless others!
 
 And don't forget to mention Erin if you like it or if it helps you in any way!

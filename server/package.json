@@ -1,0 +1,14 @@
+{
+  "name": "erin-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node.js server for Erin: serves the React app and the media directory",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "send": "^1.2.1"
+  }
+}
