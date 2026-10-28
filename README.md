@@ -73,10 +73,10 @@ touch .env
 # Edit .env file ...
 
 # Option 1 : Run Erin attached to the terminal (useful for debugging)
-docker run --env-file .env -p <YOUR-PORT-MAPPING> -v ./videos:/srv/videos:ro mosswill/erin
+docker run --env-file .env -p <YOUR-PORT-MAPPING> -v ./videos:/srv/videos:ro ghcr.io/jimaek/erintok
 
 # Option 2 : Run Erin as a daemon
-docker run -d --env-file .env -p <YOUR-PORT-MAPPING> -v ./videos:/srv/videos:ro mosswill/erin
+docker run -d --env-file .env -p <YOUR-PORT-MAPPING> -v ./videos:/srv/videos:ro ghcr.io/jimaek/erintok
 ```
 
 > **Note :** A `sample.env` file is located at the root of the repository to help you get started
@@ -133,7 +133,7 @@ To run Erin, you will need to set the following environment variables in a `.env
 > **Tip :** To generate a secure hash for your instance, use the following command :
 
 ```sh
-docker run --rm mosswill/erin npx bcrypt "your-new-password" 14
+docker run --rm ghcr.io/jimaek/erintok npx bcrypt "your-new-password" 14
 ```
 
 > **Note :** When using `docker-compose.yml` environment variables, if your password hash contains dollar signs: double them all, or else the app will crash.
@@ -222,7 +222,7 @@ These are the rules you should follow :
 That said, remember that your password hash must be a bcrypt hash (hashes previously generated with `caddy hash-password` keep working), such as one generated with the following command :
 
 ```sh
-docker run --rm mosswill/erin npx bcrypt "your-new-password" 14
+docker run --rm ghcr.io/jimaek/erintok npx bcrypt "your-new-password" 14
 ```
 
 
