@@ -1,32 +1,13 @@
-# 1- Build Caddy modules
-FROM --platform=$BUILDPLATFORM caddy:2.9.1-builder AS builder
+FROM node:22-alpine
 
-ARG TARGETARCH
-RUN GOARCH=$TARGETARCH xcaddy build \
-    --with github.com/caddyserver/replace-response
-
-# 2 - Set up Caddy and the frontend built beforehand
-FROM caddy:2.9.1-alpine
-
-# Install the modules
-COPY --from=builder /usr/bin/caddy /usr/bin/caddy
-
-# Set Caddy configuration
-COPY docker/Caddyfile /etc/caddy/Caddyfile
+# Install the server
+WORKDIR /app
+COPY server/package.json server/package-lock.json ./
+RUN npm ci --omit=dev
+COPY server/index.js ./
 
 # Install the React App
 COPY ./build /srv
 
-# Set default environment variables
-ENV AUTH_ENABLED="true"
-ENV AUTH_SECRET="\$2a\$14\$qRW8no8UDmSwIWM6KHwdRe1j/LMrxoP4NSM756RVodqeUq5HzG6t."
-ENV PUBLIC_URL="https://localhost"
-ENV APP_TITLE="Erin - TikTok feed for your own media"
-ENV AUTOPLAY_ENABLED="false"
-ENV IMAGE_DISPLAY_DURATION="5"
-ENV START_MUTED="true"
-ENV PROGRESS_BAR_POSITION="bottom"
-ENV IGNORE_HIDDEN_PATHS="false"
-ENV SCROLL_DIRECTION="vertical"
-ENV USE_CUSTOM_SKIN="false"
-ENV VIDEO_START_POSITION="start"
+EXPOSE 80
+CMD ["node", "index.js"]

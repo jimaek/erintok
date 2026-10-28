@@ -9,7 +9,6 @@ services:
     volumes:
       - ./videos:/srv/videos:ro
     environment:
-      PUBLIC_URL: "http://your-domain.tld"
       AUTH_SECRET: "<YOUR-HASH>"
 
       VIRTUAL_HOST: "your-domain.tld"
@@ -20,9 +19,7 @@ services:
       # Or even
       # LETSENCRYPT_HOST: "your-domain.tld"
       #
-      # Note that, in this example, your app will, indeed, be accessible over HTTPS
-      # in spite of PUBLIC_URL using HTTP. This is to prevent Caddy from generating a
-      # certificate, assuming that our proxy takes care of that already.
+      # Erin itself only speaks plain HTTP on port 80: the proxy takes care of HTTPS.
 
   proxy:
     image: jwilder/nginx-proxy
