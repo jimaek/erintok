@@ -488,8 +488,9 @@ const VideoFeed = forwardRef(
       );
   };
 
-  // Gestures - Tap anywhere to play / pause, and hold the left or right side to play at 2x
+  // Gestures - Tap anywhere to play / pause, and hold the left or right side to fast forward
   const HOLD_DELAY_MS = 300;
+  const FAST_FORWARD_RATE = 5;
   const HOLD_SIDE_RATIO = 0.3;
   const TAP_MOVE_TOLERANCE_PX = 10;
 
@@ -520,7 +521,7 @@ const VideoFeed = forwardRef(
 
             const video = card.querySelector("video");
             gesture.current.video = video;
-            video.playbackRate = 2;
+            video.playbackRate = FAST_FORWARD_RATE;
             if (video.paused) playPlayback();
             speedRef.current.classList.add("is-visible");
           }, HOLD_DELAY_MS)
@@ -644,7 +645,7 @@ const VideoFeed = forwardRef(
         <MediaCard key={slot} refForwarder={saveCardRef(slot)} />
       ))}
       <div ref={speedRef} className="speed-indicator">
-        2x
+        {FAST_FORWARD_RATE}x
       </div>
       <div
         ref={trackRef}

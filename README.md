@@ -21,7 +21,7 @@ for a self-hostable app that can show filtered videos using TikTok's interface, 
 
 Erin has all these features implemented :
 - Display your own images and videos using TikTok's swipe feed
-- Tap anywhere to play / pause, and press and hold the left or right side of the screen to play at 2x speed
+- Tap anywhere to play / pause, and press and hold the left or right side of the screen to play at 5x speed
 - Seek by tapping or dragging anywhere on the progress bar, or using your keyboard (arrows, and space to play / pause)
 - Choose which feed (playlist) you want to play\*
 - Autoplay your feed without even swiping

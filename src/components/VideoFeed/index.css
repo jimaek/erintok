@@ -29,18 +29,19 @@ html[data-scroll-direction="horizontal"] .feed-pad-top {
   position: fixed;
   left: 0;
   width: 100%;
-  height: 24px;
+  height: 48px;
   z-index: 102;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   cursor: pointer;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
+/* Kept clear of the bottom edge, where Android and iOS gestures (e.g. switching apps) take over */
 .video-track.bottom {
-  bottom: 0;
+  bottom: calc(40px + env(safe-area-inset-bottom, 0px));
 }
 .video-track.top {
   top: 0;
@@ -49,7 +50,7 @@ html[data-scroll-direction="horizontal"] .feed-pad-top {
 
 .video-track-line {
   width: 100%;
-  height: 2px;
+  height: 3px;
   background: rgba(255, 255, 255, 0.25);
   transition: height 0.15s ease;
 }
@@ -74,7 +75,7 @@ html[data-scroll-direction="horizontal"] .feed-pad-top {
 
 @media (hover: hover) {
   .video-track:hover .video-track-line {
-    height: 4px;
+    height: 5px;
   }
   .video-track:hover .video-track-thumb {
     transform: translate(50%, -50%) scale(0.75);
@@ -104,7 +105,7 @@ body.is-scrubbing .video-track-thumb {
   transition: opacity 0.15s ease;
 }
 .video-track-time.bottom {
-  bottom: 48px;
+  bottom: calc(112px + env(safe-area-inset-bottom, 0px));
 }
 .video-track-time.top {
   top: 48px;
@@ -118,7 +119,7 @@ html[data-scroll-direction="horizontal"] .feed {
   scroll-snap-type: x mandatory;
 }
 
-/* Fast forward (2x) indicator, shown while holding a side of the screen */
+/* Fast forward indicator, shown while holding a side of the screen */
 .speed-indicator {
   position: fixed;
   top: 24px;
