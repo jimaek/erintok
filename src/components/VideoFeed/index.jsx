@@ -11,7 +11,6 @@ const VideoFeed = forwardRef(
       jumpBackForward,
       muted,
       onFocusVideo,
-      onFinishVideo,
       onPlaybackStateChange,
     },
     ref,
@@ -52,16 +51,12 @@ const VideoFeed = forwardRef(
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
 
-  // Member - Current scroll direction
-  const _scrollDirection = document
-    .querySelector("html")
-    .getAttribute("data-scroll-direction");
-
   // Member - Prevent double jump forward
   const hasJumpedForward = useRef(false);
 
-  // Members - Tap (play / pause) and hold (fast forward) gestures
+  // Members - Tap (play / pause), hold (fast forward) and swipe gestures
   const gesture = useRef(null);
+  const snapAnimation = useRef(null);
 
   const imageDurationMs = window.IMAGE_DISPLAY_DURATION * 1000;
 
@@ -83,13 +78,6 @@ const VideoFeed = forwardRef(
 
     const cardRect = card.getBoundingClientRect();
     const feedRect = feedRef.current.getBoundingClientRect();
-    if (_scrollDirection === "horizontal") {
-      const visibleWidth =
-        Math.min(cardRect.right, feedRect.right) -
-        Math.max(cardRect.left, feedRect.left);
-      return visibleWidth / cardRect.width >= 0.95;
-    }
-
     const visibleHeight =
       Math.min(cardRect.bottom, feedRect.bottom) -
       Math.max(cardRect.top, feedRect.top);
@@ -140,7 +128,7 @@ const VideoFeed = forwardRef(
         stopImageTimeline(false);
         imageElapsedMs.current = 0;
         setProgress(0, imageDurationMs);
-        onFinishVideo();
+        finishMedia();
 
         if (isFocusedCard(card, index) && card.dataset.mediaType === "image")
           startImageTimeline();
@@ -248,7 +236,7 @@ const VideoFeed = forwardRef(
         event.target.play().catch((_) => {
           if (isFocusedCard(card, index)) onPlaybackStateChange(false);
         });
-        onFinishVideo();
+        finishMedia();
       },
       play: () => {
         if (isFocusedCard(card, index)) onPlaybackStateChange(true);
@@ -340,25 +328,16 @@ const VideoFeed = forwardRef(
 
   // Hook - On mount - Set the current scroll
   useEffect(() => {
-    if (jumpToEnd)
-      return feedRef.current.scrollBy(
-        _scrollDirection === "vertical"
-          ? { top: 1, left: 0 }
-          : { top: 0, left: 1 },
-      );
+    if (jumpToEnd) return feedRef.current.scrollBy({ top: 1, left: 0 });
     if (jumpBackForward) {
       if (!hasJumpedForward.current) {
         hasJumpedForward.current = true;
-        return feedRef.current.scrollBy(
-          _scrollDirection === "vertical"
-            ? { top: 1, left: 0 }
-            : { top: 0, left: 1 },
-        );
+        return feedRef.current.scrollBy({ top: 1, left: 0 });
       }
 
       hasJumpedForward.current = false;
     }
-  }, [normalizedInitialIndex, jumpBackForward, jumpToEnd, _scrollDirection]);
+  }, [normalizedInitialIndex, jumpBackForward, jumpToEnd]);
 
   // Hook - When media are loaded - Set up the stable-card scroll observer
   useEffect(() => {
@@ -401,16 +380,13 @@ const VideoFeed = forwardRef(
           currentIndex > previousIndex ? "next" : "prev";
         const cardRect = cardRefs.current[1].getBoundingClientRect();
         const padHeight = cardRect.height * (currentIndex - 1);
-        const padWidth = cardRect.width * (currentIndex - 1);
 
         if (scrollDirection === "next") {
           if (currentIndex > 1 && currentIndex < videos.length - 1) {
             const firstCard = cardRefs.current.shift();
             cardRefs.current.push(firstCard);
 
-            if (_scrollDirection === "vertical")
-              padRef.current.style.height = `${padHeight}px`;
-            else padRef.current.style.width = `${padWidth}px`;
+            padRef.current.style.height = `${padHeight}px`;
 
             cardRefs.current[_bufferSize - 2].insertAdjacentElement(
               "afterend",
@@ -425,9 +401,7 @@ const VideoFeed = forwardRef(
 
           cardRefs.current[1].insertAdjacentElement("beforebegin", lastCard);
 
-          if (_scrollDirection === "vertical")
-            padRef.current.style.height = `${padHeight}px`;
-          else padRef.current.style.width = `${padWidth}px`;
+          padRef.current.style.height = `${padHeight}px`;
 
           assignMedia(lastCard, currentIndex - 1);
         }
@@ -474,34 +448,92 @@ const VideoFeed = forwardRef(
       togglePlayback();
     } else if (event.code === "ArrowRight") seekBy(5);
     else if (event.code === "ArrowLeft") seekBy(-5);
-    else if (event.code === "ArrowDown")
-      feedRef.current.scrollBy(
-        _scrollDirection === "vertical"
-          ? { top: 1, left: 0, behavior: "smooth" }
-          : { top: 0, left: 1, behavior: "smooth" },
-      );
-    else if (event.code === "ArrowUp")
-      feedRef.current.scrollBy(
-        _scrollDirection === "vertical"
-          ? { top: -1, left: 0, behavior: "smooth" }
-          : { top: 0, left: -1, behavior: "smooth" },
-      );
+    else if (event.code === "ArrowDown") snapBy(1);
+    else if (event.code === "ArrowUp") snapBy(-1);
   };
 
-  // Gestures - Tap anywhere to play / pause, and hold the left or right side to fast forward
+  // Gestures - Tap anywhere to play / pause, hold the left or right side to fast forward,
+  // and swipe to change media. Touch swipes are handled here rather than by native scrolling,
+  // so that short flicks change media, and the snap animation is as quick as TikTok's
   const HOLD_DELAY_MS = 300;
   const FAST_FORWARD_RATE = 5;
   const HOLD_SIDE_RATIO = 0.3;
   const TAP_MOVE_TOLERANCE_PX = 10;
+  const SWIPE_DISTANCE_RATIO = 0.15;
+  const SWIPE_VELOCITY_PX_PER_MS = 0.3;
+  const SNAP_DURATION_MS = 250;
+  const getCardSize = () => feedRef.current.clientHeight;
 
-  const stopFastForward = () => {
-    const { video } = gesture.current;
-    if (video) video.playbackRate = 1;
+  // Returns whether an animation was stopped
+  const stopSnapAnimation = () => {
+    if (!snapAnimation.current) return false;
+
+    cancelAnimationFrame(snapAnimation.current);
+    snapAnimation.current = null;
+    return true;
+  };
+
+  // Scrolls to the n-th snap position, with native snapping disabled meanwhile
+  const snapTo = (index) => {
+    const feed = feedRef.current;
+    const size = getCardSize();
+    const maxScroll = feed.scrollHeight - feed.clientHeight;
+    const from = feed.scrollTop;
+    const to = Math.max(0, Math.min(Math.round(maxScroll / size), index)) * size;
+    const startedAt = performance.now();
+
+    stopSnapAnimation();
+    feed.classList.add("is-swiping");
+
+    const step = (now) => {
+      const progress = Math.min(1, (now - startedAt) / SNAP_DURATION_MS);
+      feed.scrollTop = from + (to - from) * (1 - (1 - progress) ** 3);
+
+      if (progress < 1) snapAnimation.current = requestAnimationFrame(step);
+      else {
+        snapAnimation.current = null;
+        feed.classList.remove("is-swiping");
+      }
+    };
+    snapAnimation.current = requestAnimationFrame(step);
+  };
+
+  const snapBy = (offset) =>
+    snapTo(Math.round(feedRef.current.scrollTop / getCardSize()) + offset);
+
+  // Autoplay - Go to the next media when the current one ends (unless it's being touched)
+  const finishMedia = () => {
+    if (window.AUTOPLAY_ENABLED && !gesture.current && !isScrubbing.current)
+      snapBy(1);
+  };
+
+  // Snaps to the next / previous media after a long enough swipe or a flick, or back otherwise
+  const settleSwipe = (swipe) => {
+    const size = getCardSize();
+    const scroll = feedRef.current.scrollTop;
+    if (!swipe?.active) return snapTo(Math.round(scroll / size));
+
+    const moved = scroll - swipe.startScroll;
+    const isFlick =
+      Math.abs(swipe.velocity) > SWIPE_VELOCITY_PX_PER_MS &&
+      Math.sign(swipe.velocity) === Math.sign(moved);
+    const offset =
+      Math.abs(moved) > size * SWIPE_DISTANCE_RATIO || isFlick
+        ? Math.sign(moved)
+        : 0;
+    snapTo(Math.round(swipe.startScroll / size) + offset);
+  };
+
+  const stopFastForward = (video) => {
+    video.playbackRate = 1;
     speedRef.current.classList.remove("is-visible");
   };
 
   const handleGestureStart = (event) => {
     if (event.button > 0 || event.target.closest(".video-track")) return;
+
+    // Touching the screen during a snap animation stops it, so that it can be swiped again right away
+    const interruptedSnap = stopSnapAnimation();
 
     const { left, width } = feedRef.current.getBoundingClientRect();
     const position = (event.clientX - left) / width;
@@ -513,52 +545,103 @@ const VideoFeed = forwardRef(
       x: event.clientX,
       y: event.clientY,
       video: null,
-      holdTimer: isOnSide
-        ? setTimeout(() => {
-            const card = currentMediaCard.current;
-            if (!gesture.current || card?.dataset.mediaType !== "video")
-              return;
+      interruptedSnap,
+      // Mouse users scroll with the wheel or the keyboard instead
+      swipe:
+        event.pointerType === "mouse"
+          ? null
+          : {
+              active: false,
+              startScroll: feedRef.current.scrollTop,
+              startPosition: event.clientY,
+              lastPosition: event.clientY,
+              lastTime: event.timeStamp,
+              velocity: 0,
+            },
+      holdTimer:
+        isOnSide && !interruptedSnap
+          ? setTimeout(() => {
+              const card = currentMediaCard.current;
+              if (!gesture.current || card?.dataset.mediaType !== "video")
+                return;
 
-            const video = card.querySelector("video");
-            gesture.current.video = video;
-            video.playbackRate = FAST_FORWARD_RATE;
-            if (video.paused) playPlayback();
-            speedRef.current.classList.add("is-visible");
-          }, HOLD_DELAY_MS)
-        : null,
+              const video = card.querySelector("video");
+              gesture.current.video = video;
+              video.playbackRate = FAST_FORWARD_RATE;
+              if (video.paused) playPlayback();
+              speedRef.current.classList.add("is-visible");
+            }, HOLD_DELAY_MS)
+          : null,
     };
+  };
+
+  const handleGestureMove = (event) => {
+    const current = gesture.current;
+    if (!current || current.pointerId !== event.pointerId || current.video)
+      return;
+
+    const { swipe } = current;
+    if (!swipe?.active) {
+      const distance = Math.hypot(
+        event.clientX - current.x,
+        event.clientY - current.y,
+      );
+      if (distance <= TAP_MOVE_TOLERANCE_PX) return;
+
+      // Moving cancels the tap and the hold, and starts swiping
+      clearTimeout(current.holdTimer);
+      if (!swipe) {
+        gesture.current = null;
+        return;
+      }
+      swipe.active = true;
+      feedRef.current.classList.add("is-swiping");
+    }
+
+    // Follow the finger, by at most one media
+    const position = event.clientY;
+    const elapsed = event.timeStamp - swipe.lastTime;
+    if (elapsed > 0)
+      swipe.velocity =
+        0.8 * ((swipe.lastPosition - position) / elapsed) +
+        0.2 * swipe.velocity;
+    swipe.lastPosition = position;
+    swipe.lastTime = event.timeStamp;
+
+    const size = getCardSize();
+    const moved = Math.max(
+      -size,
+      Math.min(size, swipe.startPosition - position),
+    );
+    feedRef.current.scrollTop = swipe.startScroll + moved;
   };
 
   const handleGestureEnd = (event) => {
     const current = gesture.current;
     if (!current || current.pointerId !== event.pointerId) return;
 
-    clearTimeout(current.holdTimer);
-    if (current.video) stopFastForward();
-    else togglePlayback();
     gesture.current = null;
+    clearTimeout(current.holdTimer);
+
+    if (current.video) stopFastForward(current.video);
+    else if (current.swipe?.active || current.interruptedSnap) {
+      // A finger that stopped before being lifted isn't a flick
+      if (current.swipe && event.timeStamp - current.swipe.lastTime > 100)
+        current.swipe.velocity = 0;
+      settleSwipe(current.swipe);
+    } else togglePlayback();
   };
 
   const handleGestureCancel = (event) => {
     const current = gesture.current;
     if (!current || current.pointerId !== event.pointerId) return;
 
-    clearTimeout(current.holdTimer);
-    if (current.video) stopFastForward();
     gesture.current = null;
-  };
+    clearTimeout(current.holdTimer);
 
-  const handleGestureMove = (event) => {
-    const current = gesture.current;
-    if (!current || current.pointerId !== event.pointerId) return;
-
-    // Moving (e.g. swiping to the next media) cancels the tap, but not an ongoing fast forward
-    const distance = Math.hypot(
-      event.clientX - current.x,
-      event.clientY - current.y,
-    );
-    if (distance > TAP_MOVE_TOLERANCE_PX && !current.video)
-      handleGestureCancel(event);
+    if (current.video) stopFastForward(current.video);
+    if (current.swipe?.active || current.interruptedSnap)
+      settleSwipe(current.swipe);
   };
 
   // Scrubbing - Press or drag anywhere on the track to seek (TikTok-like)
@@ -626,6 +709,7 @@ const VideoFeed = forwardRef(
       document.removeEventListener("keydown", handleKeyboardSeeking);
       document.body.classList.remove("is-scrubbing");
       clearTimeout(gesture.current?.holdTimer);
+      stopSnapAnimation();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

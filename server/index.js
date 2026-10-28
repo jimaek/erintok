@@ -47,7 +47,6 @@ const REACT_VARIABLES = {
   __PROGRESS_BAR_POSITION__: env("PROGRESS_BAR_POSITION", "bottom"),
   __IGNORE_HIDDEN_PATHS__: env("IGNORE_HIDDEN_PATHS", "false"),
   __USE_CUSTOM_SKIN__: env("USE_CUSTOM_SKIN", "false"),
-  __SCROLL_DIRECTION__: env("SCROLL_DIRECTION", "vertical"),
   __VIDEO_START_POSITION__: env("VIDEO_START_POSITION", "start"),
 };
 const INDEX_HTML = Buffer.from(

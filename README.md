@@ -29,7 +29,6 @@ Erin has all these features implemented :
 - Simple lazy-loading mechanism for your media
 - Automatic media naming based on file name
 - Simple and optional security using a master password
-- Support for Horizontal and Vertical scroll direction
 - Support for starting video playback from the start, middle, or random point in the video
 - Support for custom styling\*\*\*
 - Support for Docker / proxy deployment
@@ -127,7 +126,6 @@ To run Erin, you will need to set the following environment variables in a `.env
 | `START_MUTED`           | `boolean` | Whether videos should be muted. There is no mute button in the app. (This parameter is case sensitive) (Possible values : true, false) | true |
 | `PROGRESS_BAR_POSITION` | `string`  | Where the progress bar should be located on the screen. (This parameter is case sensitive) (Possible values : bottom, top) | bottom |
 | `IGNORE_HIDDEN_PATHS`   | `boolean` | Whether all hidden files and directories (starting with a dot) should be ignored by Erin, and not loaded or scanned altogether | false |
-| `SCROLL_DIRECTION`      | `string`  | The scroll direction of your media feed. (Possible values : vertical, horizontal ) | vertical |
 | `USE_CUSTOM_SKIN`       | `boolean` | Whether a custom skin should be loaded on startup. (Possible values : true, false) | false |
 | `VIDEO_START_POSITION`  | `string`  | Where videos start playing. (Possible values : start, middle, random) | start |
 

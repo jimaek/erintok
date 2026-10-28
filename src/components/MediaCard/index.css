@@ -10,11 +10,6 @@
   background: black;
 }
 
-html[data-scroll-direction="horizontal"] .media {
-  flex-grow: 1;
-  flex-shrink: 0;
-}
-
 .media::before {
   content: "";
   display: block;
