@@ -21,7 +21,7 @@ module.exports = {
         dockerTags: ["latest", "{{version}}", "{{major}}-latest", "{{major}}.{{minor}}"],
         dockerImage: "mosswill/erin",
         dockerFile: "Dockerfile",
-        dockerPlatform: ["linux/amd64", "linux/arm64", "linux/arm/v7"],
+        dockerPlatform: ["linux/amd64"],
         dockerArgs: {
           RELEASE_DATE: new Date().toISOString(),
         }
