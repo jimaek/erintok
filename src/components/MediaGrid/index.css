@@ -1,0 +1,150 @@
+/* Grid of all media (TikTok-like profile), hidden on the right of the screen until revealed */
+.media-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: #000;
+  color: white;
+  transform: translateX(100%);
+  /* Hidden once the closing animation is over */
+  visibility: hidden;
+  transition:
+    transform 250ms cubic-bezier(0.33, 1, 0.68, 1),
+    visibility 0s linear 250ms;
+  /* Vertical swipes scroll the grid, and horizontal ones are handled by the app (see MediaGrid) */
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.media-grid::-webkit-scrollbar {
+  display: none;
+}
+.media-grid.is-shown {
+  visibility: visible;
+  transition: transform 250ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+.media-grid.is-dragging {
+  transition: none;
+}
+
+.media-grid-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(48px + env(safe-area-inset-top, 0px));
+  padding: env(safe-area-inset-top, 0px) 56px 0;
+  background: #000;
+}
+.media-grid-header h2 {
+  font-size: 17px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.media-grid-back {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.media-grid-profile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px 24px;
+}
+.media-grid-profile img {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+}
+.media-grid-profile p {
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.6);
+}
+.media-grid-profile strong {
+  color: white;
+  font-weight: 700;
+}
+
+/* 3 columns on phones, and as many 200px columns as possible on larger screens */
+.media-grid-tiles {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(200px, calc((100% - 4px) / 3)), 1fr)
+  );
+  gap: 2px;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.media-grid-tile {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  background: #1a1a1a;
+  color: white;
+  font-family: inherit;
+  cursor: pointer;
+}
+.media-grid-thumbnail {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+.media-grid-tile-info {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+.media-grid-tile-info svg {
+  font-size: 11px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
+}
+
+/* The media shown in the feed */
+.media-grid-tiles .is-current .media-grid-tile {
+  outline: 2px solid white;
+  outline-offset: -2px;
+}
+.media-grid-tiles .is-current .media-grid-tile::after {
+  content: "Now playing";
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: blue;
+  font-size: 11px;
+  font-weight: 600;
+}

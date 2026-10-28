@@ -1,5 +1,7 @@
 import { forwardRef, useEffect, useRef } from "react";
 import MediaCard from "../MediaCard";
+import MediaGrid from "../MediaGrid";
+import { formatTime, getMediaUrl, trackVelocity } from "../../utils";
 import "./index.css";
 
 const VideoFeed = forwardRef(
@@ -32,6 +34,7 @@ const VideoFeed = forwardRef(
   const trackRef = useRef();
   const timeRef = useRef();
   const speedRef = useRef();
+  const gridRef = useRef();
 
   // Member - Save the three stable card wrappers in recycler order
   const cardRefs = useRef([]);
@@ -47,6 +50,7 @@ const VideoFeed = forwardRef(
   const imageIsPlaying = useRef(false);
   const videoListeners = useRef(new Map());
   const wasPlayingBeforeScrub = useRef(false);
+  const wasPlayingBeforeGrid = useRef(false);
   const isScrubbing = useRef(false);
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
@@ -186,23 +190,21 @@ const VideoFeed = forwardRef(
 
     if (!media) return;
 
-    let safeUrl = media.url;
-    try {
-      safeUrl = media.url.replace(
-        media.filename,
-        encodeURIComponent(media.filename),
-      );
-    } catch (error) {
-      console.error("Invalid URL in MediaCard:", media, error);
-    }
-
     if (media.type === "image") {
       image.alt = media.title;
-      image.src = safeUrl;
+      image.src = getMediaUrl(media);
     } else {
       video.muted = mutedRef.current;
-      video.src = safeUrl;
+      video.src = getMediaUrl(media);
     }
+  };
+
+  // Media focused while the grid of all media is open only play once it's closed
+  const holdsPlayback = () => {
+    if (!gridRef.current?.isOpen()) return false;
+
+    wasPlayingBeforeGrid.current = true;
+    return true;
   };
 
   const focusCard = (card, index) => {
@@ -216,10 +218,11 @@ const VideoFeed = forwardRef(
     currentMediaIndex.current = index;
     setProgress(0, 1);
     onFocusVideo(videos[index], index);
+    gridRef.current?.setCurrent(index);
 
     if (card.dataset.mediaType === "image") {
       imageElapsedMs.current = 0;
-      startImageTimeline(true);
+      if (!holdsPlayback()) startImageTimeline(true);
       return;
     }
 
@@ -269,9 +272,35 @@ const VideoFeed = forwardRef(
     if (listeners.loadedmetadata && video.readyState >= 1)
       listeners.loadedmetadata({ target: video });
 
+    if (holdsPlayback()) return;
     video.play().catch((_) => {
       if (isFocusedCard(card, index)) onPlaybackStateChange(false);
     });
+  };
+
+  // Shows the given media right away, recycling the cards around it
+  const jumpTo = (index) => {
+    if (!videos[index]) return;
+
+    stopSnapAnimation();
+    feedRef.current.classList.remove("is-swiping");
+    if (currentMediaCard.current) stopCardPlayback(currentMediaCard.current);
+    currentMediaCard.current = null;
+
+    const firstIndex = Math.max(
+      0,
+      Math.min(index - 1, videos.length - cardRefs.current.length),
+    );
+    cardRefs.current.forEach((card, offset) => {
+      assignMedia(card, firstIndex + offset);
+    });
+
+    const size = getCardSize();
+    padRef.current.style.height = `${firstIndex * size}px`;
+    feedRef.current.scrollTop = index * size;
+
+    // Focused right away, so that the scroll observer doesn't recycle the cards again
+    focusCard(cardRefs.current[index - firstIndex], index);
   };
 
   const pausePlayback = () => {
@@ -304,19 +333,29 @@ const VideoFeed = forwardRef(
     }
   };
 
-  const togglePlayback = () => {
+  const isPlaying = () => {
     const card = currentMediaCard.current;
-    if (!card) return;
+    if (!card) return false;
 
-    if (card.dataset.mediaType === "image") {
-      if (imageIsPlaying.current) pausePlayback();
-      else playPlayback();
-      return;
-    }
+    return card.dataset.mediaType === "image"
+      ? imageIsPlaying.current
+      : !card.querySelector("video").paused;
+  };
 
-    const video = card.querySelector("video");
-    if (video.paused) playPlayback();
-    else pausePlayback();
+  const togglePlayback = () => {
+    if (isPlaying()) pausePlayback();
+    else playPlayback();
+  };
+
+  // Grid - The media is paused while the grid of all media is open, and the one picked in it plays
+  const handleGridOpen = () => {
+    wasPlayingBeforeGrid.current = isPlaying();
+    pausePlayback();
+  };
+
+  const handleGridClose = (index) => {
+    if (index !== null && index !== currentMediaIndex.current) jumpTo(index);
+    else if (index !== null || wasPlayingBeforeGrid.current) playPlayback();
   };
 
   // Hook - Keep the global mute setting applied to the focused video.
@@ -443,6 +482,8 @@ const VideoFeed = forwardRef(
   };
 
   const handleKeyboardSeeking = (event) => {
+    if (gridRef.current?.isOpen()) return;
+
     if (event.code === "Space") {
       event.preventDefault();
       togglePlayback();
@@ -453,8 +494,9 @@ const VideoFeed = forwardRef(
   };
 
   // Gestures - Tap anywhere to play / pause, hold the left or right side to fast forward,
-  // and swipe to change media. Touch swipes are handled here rather than by native scrolling,
-  // so that short flicks change media, and the snap animation is as quick as TikTok's
+  // swipe up or down to change media, and swipe left to reveal the grid of all media.
+  // Touch swipes are handled here rather than by native scrolling, so that short flicks
+  // change media, and the snap animation is as quick as TikTok's
   const HOLD_DELAY_MS = 300;
   const FAST_FORWARD_RATE = 5;
   const HOLD_SIDE_RATIO = 0.3;
@@ -558,6 +600,13 @@ const VideoFeed = forwardRef(
               lastTime: event.timeStamp,
               velocity: 0,
             },
+      // Swiping left reveals the grid of all media (like a TikTok profile)
+      reveal: {
+        active: false,
+        lastPosition: event.clientX,
+        lastTime: event.timeStamp,
+        velocity: 0,
+      },
       holdTimer:
         isOnSide && !interruptedSnap
           ? setTimeout(() => {
@@ -580,33 +629,37 @@ const VideoFeed = forwardRef(
     if (!current || current.pointerId !== event.pointerId || current.video)
       return;
 
-    const { swipe } = current;
-    if (!swipe?.active) {
-      const distance = Math.hypot(
-        event.clientX - current.x,
-        event.clientY - current.y,
-      );
-      if (distance <= TAP_MOVE_TOLERANCE_PX) return;
+    const { swipe, reveal } = current;
+    if (!swipe?.active && !reveal.active) {
+      const dx = event.clientX - current.x;
+      const dy = event.clientY - current.y;
+      if (Math.hypot(dx, dy) <= TAP_MOVE_TOLERANCE_PX) return;
 
-      // Moving cancels the tap and the hold, and starts swiping
+      // Moving cancels the tap and the hold, and starts swiping (swiping right does nothing)
       clearTimeout(current.holdTimer);
-      if (!swipe) {
+      const tracker =
+        Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? reveal : null) : swipe;
+      if (!tracker) {
         gesture.current = null;
+        if (current.interruptedSnap) settleSwipe(null);
         return;
       }
-      swipe.active = true;
-      feedRef.current.classList.add("is-swiping");
+      tracker.active = true;
+      if (tracker === swipe) feedRef.current.classList.add("is-swiping");
+    }
+
+    // Follow the finger with the grid
+    if (reveal.active) {
+      trackVelocity(reveal, event.clientX, event.timeStamp);
+      gridRef.current.follow(
+        (current.x - event.clientX) / feedRef.current.clientWidth,
+      );
+      return;
     }
 
     // Follow the finger, by at most one media
     const position = event.clientY;
-    const elapsed = event.timeStamp - swipe.lastTime;
-    if (elapsed > 0)
-      swipe.velocity =
-        0.8 * ((swipe.lastPosition - position) / elapsed) +
-        0.2 * swipe.velocity;
-    swipe.lastPosition = position;
-    swipe.lastTime = event.timeStamp;
+    trackVelocity(swipe, position, event.timeStamp);
 
     const size = getCardSize();
     const moved = Math.max(
@@ -623,13 +676,19 @@ const VideoFeed = forwardRef(
     gesture.current = null;
     clearTimeout(current.holdTimer);
 
+    // A finger that stopped before being lifted isn't a flick
+    [current.swipe, current.reveal].forEach((tracker) => {
+      if (tracker && event.timeStamp - tracker.lastTime > 100)
+        tracker.velocity = 0;
+    });
+
     if (current.video) stopFastForward(current.video);
-    else if (current.swipe?.active || current.interruptedSnap) {
-      // A finger that stopped before being lifted isn't a flick
-      if (current.swipe && event.timeStamp - current.swipe.lastTime > 100)
-        current.swipe.velocity = 0;
+    else if (current.reveal.active) {
+      gridRef.current.release(current.reveal.velocity);
+      if (current.interruptedSnap) settleSwipe(null);
+    } else if (current.swipe?.active || current.interruptedSnap)
       settleSwipe(current.swipe);
-    } else togglePlayback();
+    else togglePlayback();
   };
 
   const handleGestureCancel = (event) => {
@@ -640,16 +699,12 @@ const VideoFeed = forwardRef(
     clearTimeout(current.holdTimer);
 
     if (current.video) stopFastForward(current.video);
+    if (current.reveal.active) gridRef.current.release(0);
     if (current.swipe?.active || current.interruptedSnap)
       settleSwipe(current.swipe);
   };
 
   // Scrubbing - Press or drag anywhere on the track to seek (TikTok-like)
-  const formatTime = (seconds) => {
-    const s = Math.floor(seconds);
-    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-  };
-
   const scrubTo = (clientX) => {
     const card = currentMediaCard.current;
     if (!card) return;
@@ -682,10 +737,7 @@ const VideoFeed = forwardRef(
     isScrubbing.current = true;
     document.body.classList.add("is-scrubbing");
 
-    wasPlayingBeforeScrub.current =
-      card.dataset.mediaType === "image"
-        ? imageIsPlaying.current
-        : !card.querySelector("video").paused;
+    wasPlayingBeforeScrub.current = isPlaying();
     pausePlayback();
     scrubTo(event.clientX);
   };
@@ -714,42 +766,50 @@ const VideoFeed = forwardRef(
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div
-      ref={feedRef}
-      className="feed"
-      key={new Date().getTime()}
-      onPointerDown={handleGestureStart}
-      onPointerMove={handleGestureMove}
-      onPointerUp={handleGestureEnd}
-      onPointerCancel={handleGestureCancel}
-      onContextMenu={(event) => event.preventDefault()}
-    >
-      <div ref={padRef} className="feed-pad-top"></div>
-      {[...Array(Math.min(_bufferSize, videos.length)).keys()].map((slot) => (
-        <MediaCard key={slot} refForwarder={saveCardRef(slot)} />
-      ))}
-      <div ref={speedRef} className="speed-indicator">
-        {FAST_FORWARD_RATE}x
-      </div>
+    <>
       <div
-        ref={trackRef}
-        className={`video-track ${window.PROGRESS_BAR_POSITION}`}
-        onPointerDown={handleScrubStart}
-        onPointerMove={handleScrubMove}
-        onPointerUp={handleScrubEnd}
-        onPointerCancel={handleScrubEnd}
+        ref={feedRef}
+        className="feed"
+        key={new Date().getTime()}
+        onPointerDown={handleGestureStart}
+        onPointerMove={handleGestureMove}
+        onPointerUp={handleGestureEnd}
+        onPointerCancel={handleGestureCancel}
+        onContextMenu={(event) => event.preventDefault()}
       >
-        <div className="video-track-line">
-          <div className="video-track-progress" ref={progressRef}>
-            <i className="video-track-thumb" />
+        <div ref={padRef} className="feed-pad-top"></div>
+        {[...Array(Math.min(_bufferSize, videos.length)).keys()].map((slot) => (
+          <MediaCard key={slot} refForwarder={saveCardRef(slot)} />
+        ))}
+        <div ref={speedRef} className="speed-indicator">
+          {FAST_FORWARD_RATE}x
+        </div>
+        <div
+          ref={trackRef}
+          className={`video-track ${window.PROGRESS_BAR_POSITION}`}
+          onPointerDown={handleScrubStart}
+          onPointerMove={handleScrubMove}
+          onPointerUp={handleScrubEnd}
+          onPointerCancel={handleScrubEnd}
+        >
+          <div className="video-track-line">
+            <div className="video-track-progress" ref={progressRef}>
+              <i className="video-track-thumb" />
+            </div>
           </div>
         </div>
+        <div
+          ref={timeRef}
+          className={`video-track-time ${window.PROGRESS_BAR_POSITION}`}
+        />
       </div>
-      <div
-        ref={timeRef}
-        className={`video-track-time ${window.PROGRESS_BAR_POSITION}`}
+      <MediaGrid
+        ref={gridRef}
+        videos={videos}
+        onOpen={handleGridOpen}
+        onClose={handleGridClose}
       />
-    </div>
+    </>
   );
   },
 );

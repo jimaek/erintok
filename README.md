@@ -23,6 +23,7 @@ Erin has all these features implemented :
 - Display your own images and videos using TikTok's swipe feed
 - Tap anywhere to play / pause, and press and hold the left or right side of the screen to play at 5x speed
 - Seek by tapping or dragging anywhere on the progress bar, or using your keyboard (arrows, and space to play / pause)
+- Swipe left to see all your media in a grid, in the same order as your feed (like a TikTok profile), tap one to play it, and swipe right to go back
 - Choose which feed (playlist) you want to play\*
 - Autoplay your feed without even swiping
 - Show media and playlist metadata using TikTok's UI\*\*
