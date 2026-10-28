@@ -5,8 +5,16 @@
   width: 60px;
   height: 100%;
   z-index: 100;
+  transition: opacity 0.15s ease;
   padding-top: 2px; /* HEIGHT OF PROGRESS TRACKER */
   padding-bottom: 58px; /* HEIGHT OF BOTTOM NAVIGATION + BORDER */
+}
+/* Keep the buttons clear of the progress bar's hit area */
+body:has(.video-track.bottom) .side-controls {
+  padding-bottom: 82px;
+}
+body.is-scrubbing .side-controls {
+  opacity: 0;
 }
 
 .side-controls .inner {

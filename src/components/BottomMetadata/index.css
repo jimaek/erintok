@@ -6,6 +6,14 @@
   background: rgba(0, 0, 0, 0.1);
   padding-top: 8px;
   padding-bottom: 3px;
+  transition: opacity 0.15s ease;
+}
+/* Keep the title clear of the progress bar's hit area */
+body:has(.video-track.bottom) .bottom-metadata {
+  padding-bottom: 24px;
+}
+body.is-scrubbing .bottom-metadata {
+  opacity: 0;
 }
 .bottom-metadata .video-title {
   width: 100%;

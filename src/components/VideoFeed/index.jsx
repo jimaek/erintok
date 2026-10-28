@@ -35,7 +35,8 @@ const VideoFeed = forwardRef(
   const feedRef = useRef();
   const progressRef = useRef();
   const padRef = useRef();
-  const scrubberRef = useRef();
+  const trackRef = useRef();
+  const timeRef = useRef();
 
   // Member - Save the three stable card wrappers in recycler order
   const cardRefs = useRef([]);
@@ -51,6 +52,7 @@ const VideoFeed = forwardRef(
   const imageIsPlaying = useRef(false);
   const videoListeners = useRef(new Map());
   const wasPlayingBeforeScrub = useRef(false);
+  const isScrubbing = useRef(false);
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
 
@@ -531,40 +533,60 @@ const VideoFeed = forwardRef(
     }, 3000);
   };
 
-  const handleScrubStart = () => {
-    scrubberRef.current.classList.add("is-dragged");
+  // Scrubbing - Press or drag anywhere on the track to seek (TikTok-like)
+  const formatTime = (seconds) => {
+    const s = Math.floor(seconds);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+
+  const scrubTo = (clientX) => {
     const card = currentMediaCard.current;
     if (!card) return;
+
+    const duration =
+      card.dataset.mediaType === "image"
+        ? window.IMAGE_DISPLAY_DURATION
+        : card.querySelector("video").duration;
+    if (!Number.isFinite(duration) || duration <= 0) return;
+
+    const { left, width } = trackRef.current.getBoundingClientRect();
+    const time = Math.max(0, Math.min(1, (clientX - left) / width)) * duration;
+
+    if (card.dataset.mediaType === "image")
+      imageElapsedMs.current = time * 1000;
+    else card.querySelector("video").currentTime = time;
+
+    setProgress(time, duration);
+    timeRef.current.textContent = `${formatTime(time)} / ${formatTime(duration)}`;
+  };
+
+  const handleScrubStart = (event) => {
+    const card = currentMediaCard.current;
+    if (!card || event.button > 0) return;
+
+    // Keep receiving the pointer's events while it's dragged outside the track
+    event.preventDefault();
+    trackRef.current.setPointerCapture(event.pointerId);
+    isScrubbing.current = true;
+    document.body.classList.add("is-scrubbing");
 
     wasPlayingBeforeScrub.current =
       card.dataset.mediaType === "image"
         ? imageIsPlaying.current
         : !card.querySelector("video").paused;
     pausePlayback();
+    scrubTo(event.clientX);
   };
 
-  const handleScrubDrag = (event) => {
-    const card = currentMediaCard.current;
-    if (!card) return;
-
-    const { clientX } = event.changedTouches[0];
-    const duration =
-      card.dataset.mediaType === "image"
-        ? window.IMAGE_DISPLAY_DURATION
-        : card.querySelector("video").duration;
-    const { width } = window.screen;
-    let mappedTime = (clientX * duration) / width;
-    mappedTime = Math.max(0, Math.min(duration, mappedTime));
-
-    if (card.dataset.mediaType === "image")
-      imageElapsedMs.current = mappedTime * 1000;
-    else card.querySelector("video").currentTime = mappedTime;
-
-    setProgress(mappedTime, duration);
+  const handleScrubMove = (event) => {
+    if (isScrubbing.current) scrubTo(event.clientX);
   };
 
   const handleScrubEnd = () => {
-    scrubberRef.current.classList.remove("is-dragged");
+    if (!isScrubbing.current) return;
+
+    isScrubbing.current = false;
+    document.body.classList.remove("is-scrubbing");
     if (wasPlayingBeforeScrub.current) playPlayback();
   };
 
@@ -572,17 +594,10 @@ const VideoFeed = forwardRef(
     document.addEventListener("keydown", handleKeyboardSeeking);
     document.addEventListener("mousemove", handleMouseMove);
 
-    const scrubber = scrubberRef.current;
-    scrubber.addEventListener("touchstart", handleScrubStart);
-    scrubber.addEventListener("touchmove", handleScrubDrag);
-    scrubber.addEventListener("touchend", handleScrubEnd);
-
     return () => {
       document.removeEventListener("keydown", handleKeyboardSeeking);
       document.removeEventListener("mousemove", handleMouseMove);
-      scrubber.removeEventListener("touchstart", handleScrubStart);
-      scrubber.removeEventListener("touchmove", handleScrubDrag);
-      scrubber.removeEventListener("touchend", handleScrubEnd);
+      document.body.classList.remove("is-scrubbing");
       if (timer.current) clearTimeout(timer.current);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -598,13 +613,23 @@ const VideoFeed = forwardRef(
         />
       ))}
       <div
-        className={`video-track-progress ${window.PROGRESS_BAR_POSITION}`}
-        ref={progressRef}
+        ref={trackRef}
+        className={`video-track ${window.PROGRESS_BAR_POSITION}`}
+        onPointerDown={handleScrubStart}
+        onPointerMove={handleScrubMove}
+        onPointerUp={handleScrubEnd}
+        onPointerCancel={handleScrubEnd}
       >
-        <button ref={scrubberRef} className="video-track-scrubber">
-          <i />
-        </button>
+        <div className="video-track-line">
+          <div className="video-track-progress" ref={progressRef}>
+            <i className="video-track-thumb" />
+          </div>
+        </div>
       </div>
+      <div
+        ref={timeRef}
+        className={`video-track-time ${window.PROGRESS_BAR_POSITION}`}
+      />
     </div>
   );
   },

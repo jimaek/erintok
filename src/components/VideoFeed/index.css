@@ -19,54 +19,99 @@ html[data-scroll-direction="horizontal"] .feed-pad-top {
   display: none;
 }
 
-.video-track-progress {
-  height: 1px;
-  width: 0%;
-  background: blue;
+/* Progress bar : a thin line inside a taller, invisible hit area that can be pressed and dragged anywhere */
+.video-track {
   position: fixed;
-  will-change: width;
+  left: 0;
+  width: 100%;
+  height: 24px;
   z-index: 102;
-  overflow: visible;
   display: flex;
-  justify-content: flex-end;
-  align-items: center;
+  align-items: flex-end;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
-.video-track-progress.bottom {
+.video-track.bottom {
   bottom: 57px;
 }
-.video-track-progress.top {
+.video-track.top {
   top: 0;
+  align-items: flex-start;
 }
-body.fullscreen .video-track-progress.bottom {
+body.fullscreen .video-track.bottom {
   bottom: 0;
 }
 
-.video-track-scrubber {
-  width: 32px;
-  height: 32px;
-  background: transparent;
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  outline: 0;
-  border: 0;
-  padding: 0;
+.video-track-line {
+  width: 100%;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.25);
+  transition: height 0.15s ease;
+}
+.video-track-progress {
+  position: relative;
+  width: 0%;
+  height: 100%;
+  background: blue;
+  will-change: width;
+}
+.video-track-thumb {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: blue;
+  transform: translate(50%, -50%) scale(0);
+  transition: transform 0.15s ease;
 }
 
-.video-track-scrubber i {
-  margin-left: auto;
-  display: block;
-  width: 18px;
-  height: 7px;
-  border-radius: 23051998px;
-  background: blue;
-  border: 0;
-  outline: 0;
-  flex-shrink: 0;
+@media (hover: hover) {
+  .video-track:hover .video-track-line {
+    height: 4px;
+  }
+  .video-track:hover .video-track-thumb {
+    transform: translate(50%, -50%) scale(0.75);
+  }
 }
-.video-track-scrubber.is-dragged {
-  width: 18px;
-  height: 18px;
+body.is-scrubbing .video-track-line {
+  height: 6px;
+}
+body.is-scrubbing .video-track-thumb {
+  transform: translate(50%, -50%) scale(1);
+}
+
+/* Time shown while scrubbing */
+.video-track-time {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 102;
+  color: white;
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.video-track-time.bottom {
+  bottom: 105px;
+}
+.video-track-time.top {
+  top: 48px;
+}
+body.fullscreen .video-track-time.bottom {
+  bottom: 48px;
+}
+body.is-scrubbing .video-track-time {
+  opacity: 1;
 }
 
 html[data-scroll-direction="horizontal"] .feed {
