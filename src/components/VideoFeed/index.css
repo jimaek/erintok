@@ -14,6 +14,11 @@ html[data-scroll-direction="horizontal"] .feed-pad-top {
   scroll-snap-type: y mandatory;
   -ms-overflow-style: none;
   scrollbar-width: none;
+  /* Holding the media fast-forwards it, rather than selecting it or opening a menu */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 .feed::-webkit-scrollbar {
   display: none;
@@ -35,14 +40,11 @@ html[data-scroll-direction="horizontal"] .feed-pad-top {
   -webkit-tap-highlight-color: transparent;
 }
 .video-track.bottom {
-  bottom: 57px;
+  bottom: 0;
 }
 .video-track.top {
   top: 0;
   align-items: flex-start;
-}
-body.fullscreen .video-track.bottom {
-  bottom: 0;
 }
 
 .video-track-line {
@@ -102,13 +104,10 @@ body.is-scrubbing .video-track-thumb {
   transition: opacity 0.15s ease;
 }
 .video-track-time.bottom {
-  bottom: 105px;
+  bottom: 48px;
 }
 .video-track-time.top {
   top: 48px;
-}
-body.fullscreen .video-track-time.bottom {
-  bottom: 48px;
 }
 body.is-scrubbing .video-track-time {
   opacity: 1;
@@ -117,4 +116,25 @@ body.is-scrubbing .video-track-time {
 html[data-scroll-direction="horizontal"] .feed {
   display: flex;
   scroll-snap-type: x mandatory;
+}
+
+/* Fast forward (2x) indicator, shown while holding a side of the screen */
+.speed-indicator {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 102;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.speed-indicator.is-visible {
+  opacity: 1;
 }

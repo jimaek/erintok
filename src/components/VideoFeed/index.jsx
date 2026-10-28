@@ -1,9 +1,4 @@
-import {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useRef,
-} from "react";
+import { forwardRef, useEffect, useRef } from "react";
 import MediaCard from "../MediaCard";
 import "./index.css";
 
@@ -37,6 +32,7 @@ const VideoFeed = forwardRef(
   const padRef = useRef();
   const trackRef = useRef();
   const timeRef = useRef();
+  const speedRef = useRef();
 
   // Member - Save the three stable card wrappers in recycler order
   const cardRefs = useRef([]);
@@ -64,10 +60,8 @@ const VideoFeed = forwardRef(
   // Member - Prevent double jump forward
   const hasJumpedForward = useRef(false);
 
-  // Members - Fullscreen behavior
-  const isInFullscreen = useRef(false);
-  const fullscreenIsSafe = useRef(false);
-  const timer = useRef();
+  // Members - Tap (play / pause) and hold (fast forward) gestures
+  const gesture = useRef(null);
 
   const imageDurationMs = window.IMAGE_DISPLAY_DURATION * 1000;
 
@@ -177,7 +171,10 @@ const VideoFeed = forwardRef(
     removeVideoListeners(video);
     video.pause();
 
-    if (currentMediaCard.current === card && card.dataset.mediaType === "image")
+    if (
+      currentMediaCard.current === card &&
+      card.dataset.mediaType === "image"
+    )
       stopImageTimeline();
   };
 
@@ -307,7 +304,8 @@ const VideoFeed = forwardRef(
     if (!card) return;
 
     if (card.dataset.mediaType === "image") {
-      if (imageElapsedMs.current >= imageDurationMs) imageElapsedMs.current = 0;
+      if (imageElapsedMs.current >= imageDurationMs)
+        imageElapsedMs.current = 0;
       startImageTimeline();
     } else {
       const video = card.querySelector("video");
@@ -332,8 +330,6 @@ const VideoFeed = forwardRef(
     if (video.paused) playPlayback();
     else pausePlayback();
   };
-
-  useImperativeHandle(ref, () => ({ togglePlayback }));
 
   // Hook - Keep the global mute setting applied to the focused video.
   useEffect(() => {
@@ -401,7 +397,8 @@ const VideoFeed = forwardRef(
 
         if (videos.length <= 1 || previousIndex === currentIndex) return;
 
-        const scrollDirection = currentIndex > previousIndex ? "next" : "prev";
+        const scrollDirection =
+          currentIndex > previousIndex ? "next" : "prev";
         const cardRect = cardRefs.current[1].getBoundingClientRect();
         const padHeight = cardRect.height * (currentIndex - 1);
         const padWidth = cardRect.width * (currentIndex - 1);
@@ -472,7 +469,10 @@ const VideoFeed = forwardRef(
   };
 
   const handleKeyboardSeeking = (event) => {
-    if (event.code === "ArrowRight") seekBy(5);
+    if (event.code === "Space") {
+      event.preventDefault();
+      togglePlayback();
+    } else if (event.code === "ArrowRight") seekBy(5);
     else if (event.code === "ArrowLeft") seekBy(-5);
     else if (event.code === "ArrowDown")
       feedRef.current.scrollBy(
@@ -488,49 +488,76 @@ const VideoFeed = forwardRef(
       );
   };
 
-  const toggleFullscreen = () => {
-    const element = document.documentElement;
-    const requestMethod =
-      element.requestFullScreen ||
-      element.webkitRequestFullScreen ||
-      element.mozRequestFullScreen ||
-      element.msRequestFullScreen;
+  // Gestures - Tap anywhere to play / pause, and hold the left or right side to play at 2x
+  const HOLD_DELAY_MS = 300;
+  const HOLD_SIDE_RATIO = 0.3;
+  const TAP_MOVE_TOLERANCE_PX = 10;
 
-    if (!isInFullscreen.current) {
-      isInFullscreen.current = true;
-      document.body.classList.add("fullscreen");
-      requestMethod.call(element);
-      setTimeout(() => {
-        fullscreenIsSafe.current = true;
-      }, 1000);
-    } else {
-      isInFullscreen.current = false;
-      fullscreenIsSafe.current = false;
-      document.body.classList.remove("fullscreen");
-      if (timer.current) clearTimeout(timer.current);
-      document.exitFullscreen();
-    }
+  const stopFastForward = () => {
+    const { video } = gesture.current;
+    if (video) video.playbackRate = 1;
+    speedRef.current.classList.remove("is-visible");
   };
 
-  const handleMediaTapToSeek = (event) => {
-    const fullWidth = event.currentTarget.offsetWidth;
-    const firstThird = fullWidth / 3;
-    const secondThird = (fullWidth / 3) * 2;
+  const handleGestureStart = (event) => {
+    if (event.button > 0 || event.target.closest(".video-track")) return;
 
-    if (event.clientX >= 0 && event.clientX <= firstThird) seekBy(-5);
-    else if (event.clientX > firstThird && event.clientX <= secondThird)
-      toggleFullscreen();
-    else if (event.clientX > secondThird) seekBy(5);
+    const { left, width } = feedRef.current.getBoundingClientRect();
+    const position = (event.clientX - left) / width;
+    const isOnSide =
+      position < HOLD_SIDE_RATIO || position > 1 - HOLD_SIDE_RATIO;
+
+    gesture.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      video: null,
+      holdTimer: isOnSide
+        ? setTimeout(() => {
+            const card = currentMediaCard.current;
+            if (!gesture.current || card?.dataset.mediaType !== "video")
+              return;
+
+            const video = card.querySelector("video");
+            gesture.current.video = video;
+            video.playbackRate = 2;
+            if (video.paused) playPlayback();
+            speedRef.current.classList.add("is-visible");
+          }, HOLD_DELAY_MS)
+        : null,
+    };
   };
 
-  const handleMouseMove = () => {
-    if (!isInFullscreen.current || !fullscreenIsSafe.current) return;
-    if (timer.current) clearTimeout(timer.current);
+  const handleGestureEnd = (event) => {
+    const current = gesture.current;
+    if (!current || current.pointerId !== event.pointerId) return;
 
-    document.body.classList.remove("fullscreen");
-    timer.current = setTimeout(() => {
-      document.body.classList.add("fullscreen");
-    }, 3000);
+    clearTimeout(current.holdTimer);
+    if (current.video) stopFastForward();
+    else togglePlayback();
+    gesture.current = null;
+  };
+
+  const handleGestureCancel = (event) => {
+    const current = gesture.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+
+    clearTimeout(current.holdTimer);
+    if (current.video) stopFastForward();
+    gesture.current = null;
+  };
+
+  const handleGestureMove = (event) => {
+    const current = gesture.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+
+    // Moving (e.g. swiping to the next media) cancels the tap, but not an ongoing fast forward
+    const distance = Math.hypot(
+      event.clientX - current.x,
+      event.clientY - current.y,
+    );
+    if (distance > TAP_MOVE_TOLERANCE_PX && !current.video)
+      handleGestureCancel(event);
   };
 
   // Scrubbing - Press or drag anywhere on the track to seek (TikTok-like)
@@ -550,7 +577,8 @@ const VideoFeed = forwardRef(
     if (!Number.isFinite(duration) || duration <= 0) return;
 
     const { left, width } = trackRef.current.getBoundingClientRect();
-    const time = Math.max(0, Math.min(1, (clientX - left) / width)) * duration;
+    const time =
+      Math.max(0, Math.min(1, (clientX - left) / width)) * duration;
 
     if (card.dataset.mediaType === "image")
       imageElapsedMs.current = time * 1000;
@@ -592,26 +620,32 @@ const VideoFeed = forwardRef(
 
   useEffect(() => {
     document.addEventListener("keydown", handleKeyboardSeeking);
-    document.addEventListener("mousemove", handleMouseMove);
 
     return () => {
       document.removeEventListener("keydown", handleKeyboardSeeking);
-      document.removeEventListener("mousemove", handleMouseMove);
       document.body.classList.remove("is-scrubbing");
-      if (timer.current) clearTimeout(timer.current);
+      clearTimeout(gesture.current?.holdTimer);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div ref={feedRef} className="feed" key={new Date().getTime()}>
+    <div
+      ref={feedRef}
+      className="feed"
+      key={new Date().getTime()}
+      onPointerDown={handleGestureStart}
+      onPointerMove={handleGestureMove}
+      onPointerUp={handleGestureEnd}
+      onPointerCancel={handleGestureCancel}
+      onContextMenu={(event) => event.preventDefault()}
+    >
       <div ref={padRef} className="feed-pad-top"></div>
       {[...Array(Math.min(_bufferSize, videos.length)).keys()].map((slot) => (
-        <MediaCard
-          key={slot}
-          onDoubleClick={handleMediaTapToSeek}
-          refForwarder={saveCardRef(slot)}
-        />
+        <MediaCard key={slot} refForwarder={saveCardRef(slot)} />
       ))}
+      <div ref={speedRef} className="speed-indicator">
+        2x
+      </div>
       <div
         ref={trackRef}
         className={`video-track ${window.PROGRESS_BAR_POSITION}`}

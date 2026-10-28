@@ -1,7 +1,7 @@
 .bottom-metadata {
   position: fixed;
-  bottom: 57px;
-  width: calc(100% - 60px); /* 60px is the width of the side controls */
+  bottom: 0;
+  width: 100%;
   z-index: 10;
   background: rgba(0, 0, 0, 0.1);
   padding-top: 8px;
@@ -77,8 +77,4 @@ body.is-scrubbing .bottom-metadata {
   line-height: 125%;
   max-height: 50px;
   overflow: auto;
-}
-
-body.fullscreen .bottom-metadata {
-  bottom: 0;
 }

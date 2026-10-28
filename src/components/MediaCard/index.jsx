@@ -4,7 +4,7 @@ import { useCallback, useRef } from "react";
 // Assets
 import "./index.css";
 
-const MediaCard = ({ refForwarder, onDoubleClick }) => {
+const MediaCard = ({ refForwarder }) => {
   const cardRef = useRef(null);
 
   const forward = useCallback((_ref) => {
@@ -13,7 +13,7 @@ const MediaCard = ({ refForwarder, onDoubleClick }) => {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="media" ref={forward} onDoubleClick={onDoubleClick}>
+    <div className="media" ref={forward}>
       <video
         className="player media-video"
         playsInline={true}
