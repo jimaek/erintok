@@ -14,9 +14,6 @@ html {
   scroll-snap-type: y mandatory;
   font-family: "Inter", sans-serif;
 }
-html[data-scroll-direction="horizontal"] {
-  scroll-snap-type: x mandatory;
-}
 
 body {
   background-color: #000;

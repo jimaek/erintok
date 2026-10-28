@@ -10,7 +10,7 @@
 }
 /* Keep the title clear of the progress bar's hit area */
 body:has(.video-track.bottom) .bottom-metadata {
-  padding-bottom: 24px;
+  padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
 }
 body.is-scrubbing .bottom-metadata {
   opacity: 0;
