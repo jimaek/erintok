@@ -20,7 +20,7 @@ const MediaCard = ({ refForwarder }) => {
         preload="auto"
         hidden
       />
-      <img className="player media-image" alt="" hidden />
+      <img className="player media-image" alt="" draggable={false} hidden />
     </div>
   );
 };
